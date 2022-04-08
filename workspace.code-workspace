@@ -1,0 +1,15 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"name": "smarthome-server",
+			"path": "projects\\smarthome-server\\arduino\\smarthome-server"
+		},
+		{
+			"path": "projects\\pir-wifi-fade-single\\arduino\\pir-wifi-fade-single"
+		}
+	],
+  "settings": {}
+}

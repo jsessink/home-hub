@@ -1,0 +1,34 @@
+{
+  "name": "rgba-picker-clientside",
+  "version": "1.0.0",
+  "description": "The client for the RGBA picker. Uses Svelte for the clientside library and websockets for up-to-date communication with requestors.",
+  "scripts": {
+    "build": "rollup -c",
+    "dev": "rollup -c -w",
+    "start": "sirv ../../arduino/pir-wifi-fade-single/data --no-clear --port 5001",
+    "check": "svelte-check --tsconfig ./tsconfig.json"
+  },
+  "devDependencies": {
+    "@rollup/plugin-commonjs": "^17.0.0",
+    "@rollup/plugin-node-resolve": "^11.0.0",
+    "@rollup/plugin-typescript": "^8.0.0",
+    "@tsconfig/svelte": "^2.0.0",
+    "rollup": "^2.3.4",
+    "rollup-plugin-copy": "^3.4.0",
+    "rollup-plugin-css-only": "^3.1.0",
+    "rollup-plugin-livereload": "^2.0.0",
+    "rollup-plugin-sourcemaps": "^0.6.3",
+    "rollup-plugin-svelte": "^7.0.0",
+    "rollup-plugin-terser": "^7.0.0",
+    "svelte": "^3.46.5",
+    "svelte-check": "^2.0.0",
+    "svelte-preprocess": "^4.0.0",
+    "typescript": "^4.0.0",
+    "tslib": "^2.0.0"
+  },
+  "dependencies": {
+    "sirv-cli": "^2.0.0"
+  },
+  "author": "Josh Sessink",
+  "license": "ISC"
+}
