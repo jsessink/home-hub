@@ -7,17 +7,27 @@
 #include "C:/projects/_personal/arduino/projects/_shared/AccessPointConfig.h"
 #include "C:/projects/_personal/arduino/projects/_shared/ControllerConfig.h"
 
-#include "WebApp/src/WebApp.h"
+#include "API/src/API.h"
 #include "LEDControl/src/LEDControl.h"
+#include "Settings/src/Settings.h"
 
 LEDControl ledControl;
-WebApp webApp;
+API api;
 
 AsyncWebServer server(80);
 
 void setup()
 {
   Serial.begin(115200);
+
+  Serial.println("Setting previously ON settings to the light strip, in case it was turned off by a switch or accident.");
+  
+  // LED settings to ESP configuration
+  ledControl.ledSetup();
+
+  // Init the settings in case defaults need to be set
+  Settings bootedSettings = api.initGetSettings();
+  ledControl.initBootedSettings(bootedSettings);
 
   // Connect to Wi-Fi network with SSID and password
   Serial.print("Connecting Host Access Point");
@@ -55,9 +65,6 @@ void setup()
 
   Serial.println(httpResponseCode);
 
-  // Write initial LED settings to ESP
-  ledControl.ledSetup();
-
   // Setup for SPIFFS for accessing data storage on the ESP32 flash memory
   if (!SPIFFS.begin(true))
   {
@@ -66,15 +73,14 @@ void setup()
   }
 
   // Async - Does not need to be in loop
-  webApp.handleClient(&server);
+  api.handleServiceRouting(&server);
 
   // Initialize OTA updater (needs to be before server boots)
   //  -- Visit http://[ip]:[port]/update to update the firmware OTA
   //  --- Upload the firmware as .bin by using PlatformIO output found in /.pio/build/nodemcu-32s/firmware.bin
   AsyncElegantOTA.begin(&server);
 
-  // server.begin in WebApp
-  webApp.initServer();
+  server.begin();
 }
 
 void loop() {}

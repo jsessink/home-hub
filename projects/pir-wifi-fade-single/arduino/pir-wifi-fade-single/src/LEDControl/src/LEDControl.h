@@ -1,3 +1,5 @@
+#include "Settings/src/Settings.h"
+
 #ifndef LED_Control_H
 #define LED_Control_H
 
@@ -23,6 +25,7 @@ class LEDControl {
             int g,
             int b
         );
+        void initBootedSettings(Settings settings);
 };
 
 #endif

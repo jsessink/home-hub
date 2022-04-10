@@ -4,6 +4,7 @@
 #include "SPIFFS.h"
 #include <ESPAsyncWebServer.h>
 #include <ArduinoJson.h>
+#include <StreamUtils.h>
 
 #include "WebApp.h"
 #include "ControllerManagement/src/ControllerManagement.h"
@@ -26,10 +27,12 @@ void WebApp::handleServiceRouting()
 {
     _server->on("/api/get-controller-list", HTTP_GET, [](AsyncWebServerRequest *request) {
         ControllerManagement controllerManagement;
+        StaticJsonDocument<512> list = controllerManagement.getControllerList();
 
-        String foo = controllerManagement.getControllerList();
+        String json = "";
+        serializeJson(list, json);
         
-        request->send(200, "text/plain", foo);
+        request->send(200, "text/plain", json);
     });
 
     _server->on("/api/add-controller", HTTP_POST,
