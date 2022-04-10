@@ -77,6 +77,7 @@ Response ControllerManagement::addController(AsyncWebServerRequest *request, Sta
     
     // Send the original request's JSON to be deserialized on the remote controller
     http.POST(json);
+    http.end();
 
     // Get current JSON settings from EEPROM
     StaticJsonDocument<512> updatedDoc;

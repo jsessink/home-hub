@@ -2,7 +2,7 @@
 	import RGBAPicker from './components/RGBAPicker.svelte';
 
 	async function onColorChange(e: CustomEvent<{ detail: { r: number, g: number, b: number, a: number } }>) {
-		const res = await fetch('/api/rgba-change', {
+		const res = await fetch('/api/rgb-change', {
 			method: 'POST',
 			body: JSON.stringify(e.detail)
 		})

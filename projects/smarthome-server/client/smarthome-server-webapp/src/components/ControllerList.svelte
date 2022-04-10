@@ -1,29 +1,34 @@
 <script lang="ts">
     import { onMount, createEventDispatcher } from 'svelte';
 
+    import RgbPir from './ControllerSettings/RGB-PIR.svelte';
     import AddNewControllerDialog from './AddNewControllerDialog.svelte';
 
     let addNewDialogOpen = false;
 
-    onMount(() => {
-        getControllersList();
-    });
+    const controllers$: Promise<{ controllerIP: string, controllerType: string; }[]> = getControllersList();
+
+    onMount(() => {});
 
     // Get the list from the local hub
     async function getControllersList() {
         const res = await fetch(`/api/get-controller-list`);
-        const text = await res.text();
+        const body = await res.json();
+
+        const controllers = [];
 
         if (res.ok) {
-            console.log(text);
-			return text;
-		} else {
-			throw new Error(text);
-		}
-    }
+            Object.keys(body).map((key, index) => {
+                controllers.push({
+                    controllerIP: key,
+                    controllerType: body[key][0]
+                });
 
-    function onAddNewClick() {
-        addNewDialogOpen = true;
+                console.log(controllers);
+            });
+		}
+        
+	    return controllers;
     }
 </script>
 
@@ -31,13 +36,15 @@
     <!-- {#await promise then value}
         <p>the value is {value}</p>
     {/await} -->
+
+    {#await controllers$ then controllers}
+        {#each controllers as controller}
+            {#if controller.controllerType == '1' && controller.controllerIP == '192.168.4.2'}
+                <RgbPir controllerIP={controller.controllerIP} />
+            {/if}
+        {/each}
+    {/await}
 </div>
-
-{#if addNewDialogOpen}
-<AddNewControllerDialog />
-{/if}
-
-<button on:click={ onAddNewClick }>Add New Controller</button>
 
 <style>
 

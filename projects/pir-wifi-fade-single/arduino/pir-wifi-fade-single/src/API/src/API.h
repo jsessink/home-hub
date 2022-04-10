@@ -3,6 +3,7 @@
 #include <ESPAsyncWebServer.h>
 
 #include "Settings/src/Settings.h"
+#include "Response.h"
 
 #ifndef API_h
 #define API_h
@@ -10,11 +11,12 @@
 class API {
     private:
         AsyncWebServer *_server;
+
         unsigned long currentTime = millis();
         unsigned long previousTime = 0;
         const long timeoutTime = 2000;
 
-        static void onRGBAChange();
+        static void changeColor(ColorSettings colorSettings);
 
     public:
         WiFiClient client;

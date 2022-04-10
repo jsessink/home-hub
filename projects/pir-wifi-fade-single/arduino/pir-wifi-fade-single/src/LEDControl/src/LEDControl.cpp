@@ -2,6 +2,7 @@
 
 #include "LEDControl.h"
 #include "Settings/src/Settings.h"
+#include "API/src/Response.h"
 
 void LEDControl::ledSetup()
 {
@@ -25,6 +26,49 @@ void LEDControl::handleLEDRequest(
     ledcWrite(redChannel, r);
     ledcWrite(greenChannel, g);
     ledcWrite(blueChannel, b);
+}
+
+void LEDControl::handleColorChange(ColorSettings currentSettings, ColorSettings newSettings)
+{
+    // Set color to lights w/ fade effect
+    int rValDirection = currentSettings.colorR < newSettings.colorR ? 1 : -1;
+    int gValDirection = currentSettings.colorG < newSettings.colorG ? 1 : -1;
+    int bValDirection = currentSettings.colorB < newSettings.colorB ? 1 : -1;
+
+    Serial.println("Attempting to change the color of the lights.");
+
+    Serial.println("Current red: ");
+    Serial.println(currentSettings.colorR);
+
+    Serial.println("New red: ");
+    Serial.println(newSettings.colorR);
+    do
+    {
+        if (currentSettings.colorR != newSettings.colorR) {
+            Serial.println("Red");
+            currentSettings.colorR += rValDirection;
+            ledcWrite(redChannel, currentSettings.colorR);
+        }
+
+        if (currentSettings.colorG != newSettings.colorG) {
+            Serial.println("Green");
+            currentSettings.colorG += gValDirection;
+            ledcWrite(greenChannel, currentSettings.colorG);
+        }
+
+        if (currentSettings.colorB != newSettings.colorB) {
+            Serial.println("Blue");
+            currentSettings.colorB += bValDirection;
+            ledcWrite(blueChannel, currentSettings.colorB);
+        }
+
+        delay(10);
+    } while (
+        currentSettings.colorR != newSettings.colorR &&
+        currentSettings.colorG != newSettings.colorG &&
+        currentSettings.colorB != newSettings.colorB
+    );
+    Serial.println("All set!");
 }
 
 void LEDControl::initBootedSettings(Settings settings)
