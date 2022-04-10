@@ -16,6 +16,27 @@ API api;
 
 AsyncWebServer server(80);
 
+bool attemptingWiFiConnection;
+void checkWiFiStatusAndConnect()
+{
+  if(WiFi.status() != WL_CONNECTED)
+  {
+    if (!attemptingWiFiConnection)
+    {
+      Serial.println("WiFi was disconnected, attempting reconnect.");
+      WiFi.reconnect();
+
+      while (WiFi.status() != WL_CONNECTED)
+      {
+        delay(500);
+        Serial.print(".");
+      }
+
+      Serial.println("Reconnected!");
+    }
+  }
+}
+
 void setup()
 {
   Serial.begin(115200);
@@ -34,12 +55,16 @@ void setup()
 
   // Connect to Home WiFi network with SSID and password
   WiFi.mode(WIFI_STA);
+
+  attemptingWiFiConnection = true;
   WiFi.begin(AccessPointSSID, AccessPointPassword);
   while (WiFi.status() != WL_CONNECTED)
   {
     delay(500);
     Serial.print(".");
   }
+  attemptingWiFiConnection = false;
+
   Serial.println("");
   Serial.println("Connected to Access Point.");
   Serial.println("Assigned IP address: ");
@@ -50,20 +75,18 @@ void setup()
   Serial.println(WiFi.dnsIP());
   Serial.println("");
 
-
   // Let host know we exist by doing a GET request to a specific endpoint
   // Send default data to remote controller to store on its own flash memory to offload that data so it can be used "offline" if necessary
-  HTTPClient http;
+  // HTTPClient http;
+  // String endpoint = "http://" + WiFi.dnsIP().toString() + "/connection/new-connection?controller-ip=" + WiFi.localIP().toString() + "&controller-type=" + ControllerConfig::PIRRGB;
 
-  String endpoint = "http://" + WiFi.dnsIP().toString() + "/connection/new-connection?controller-ip=" + WiFi.localIP().toString() + "&controller-type=" + ControllerConfig::PIRRGB;
+  // Serial.println("Making GET request to - ");
+  // Serial.println(endpoint);
 
-  Serial.println("Making GET request to - ");
-  Serial.print(endpoint);
+  // http.begin(endpoint);
+  // int httpResponseCode = http.GET();
 
-  http.begin(endpoint);
-  int httpResponseCode = http.GET();
-
-  Serial.println(httpResponseCode);
+  // Serial.println("Status of that request: " + httpResponseCode);
 
   // Setup for SPIFFS for accessing data storage on the ESP32 flash memory
   if (!SPIFFS.begin(true))
@@ -81,6 +104,13 @@ void setup()
   AsyncElegantOTA.begin(&server);
 
   server.begin();
+
+  // Check connection constantly in case the hub goes down and needs to reconnect
+  for(;;)
+  {
+    delay(1000);
+    checkWiFiStatusAndConnect();
+  }
 }
 
 void loop() {}

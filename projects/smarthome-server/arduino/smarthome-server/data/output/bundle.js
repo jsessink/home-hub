@@ -4,6 +4,9 @@ var app = (function () {
     'use strict';
 
     function noop() { }
+    function is_promise(value) {
+        return value && typeof value === 'object' && typeof value.then === 'function';
+    }
     function add_location(element, file, line, column, char) {
         element.__svelte_meta = {
             loc: { file, line, column, char }
@@ -27,21 +30,6 @@ var app = (function () {
     function is_empty(obj) {
         return Object.keys(obj).length === 0;
     }
-    function validate_store(store, name) {
-        if (store != null && typeof store.subscribe !== 'function') {
-            throw new Error(`'${name}' is not a store with a 'subscribe' method`);
-        }
-    }
-    function subscribe(store, ...callbacks) {
-        if (store == null) {
-            return noop;
-        }
-        const unsub = store.subscribe(...callbacks);
-        return unsub.unsubscribe ? () => unsub.unsubscribe() : unsub;
-    }
-    function component_subscribe(component, store, callback) {
-        component.$$.on_destroy.push(subscribe(store, callback));
-    }
     function append(target, node) {
         target.appendChild(node);
     }
@@ -50,6 +38,12 @@ var app = (function () {
     }
     function detach(node) {
         node.parentNode.removeChild(node);
+    }
+    function destroy_each(iterations, detaching) {
+        for (let i = 0; i < iterations.length; i += 1) {
+            if (iterations[i])
+                iterations[i].d(detaching);
+        }
     }
     function element(name) {
         return document.createElement(name);
@@ -60,9 +54,8 @@ var app = (function () {
     function space() {
         return text(' ');
     }
-    function listen(node, event, handler, options) {
-        node.addEventListener(event, handler, options);
-        return () => node.removeEventListener(event, handler, options);
+    function empty() {
+        return text('');
     }
     function attr(node, attribute, value) {
         if (value == null)
@@ -70,28 +63,8 @@ var app = (function () {
         else if (node.getAttribute(attribute) !== value)
             node.setAttribute(attribute, value);
     }
-    function to_number(value) {
-        return value === '' ? null : +value;
-    }
     function children(element) {
         return Array.from(element.childNodes);
-    }
-    function set_input_value(input, value) {
-        input.value = value == null ? '' : value;
-    }
-    function select_option(select, value) {
-        for (let i = 0; i < select.options.length; i += 1) {
-            const option = select.options[i];
-            if (option.__value === value) {
-                option.selected = true;
-                return;
-            }
-        }
-        select.selectedIndex = -1; // no option should be selected
-    }
-    function select_value(select) {
-        const selected_option = select.querySelector(':checked') || select.options[0];
-        return selected_option && selected_option.__value;
     }
     function custom_event(type, detail, bubbles = false) {
         const e = document.createEvent('CustomEvent');
@@ -229,6 +202,88 @@ var app = (function () {
             });
             block.o(local);
         }
+    }
+
+    function handle_promise(promise, info) {
+        const token = info.token = {};
+        function update(type, index, key, value) {
+            if (info.token !== token)
+                return;
+            info.resolved = value;
+            let child_ctx = info.ctx;
+            if (key !== undefined) {
+                child_ctx = child_ctx.slice();
+                child_ctx[key] = value;
+            }
+            const block = type && (info.current = type)(child_ctx);
+            let needs_flush = false;
+            if (info.block) {
+                if (info.blocks) {
+                    info.blocks.forEach((block, i) => {
+                        if (i !== index && block) {
+                            group_outros();
+                            transition_out(block, 1, 1, () => {
+                                if (info.blocks[i] === block) {
+                                    info.blocks[i] = null;
+                                }
+                            });
+                            check_outros();
+                        }
+                    });
+                }
+                else {
+                    info.block.d(1);
+                }
+                block.c();
+                transition_in(block, 1);
+                block.m(info.mount(), info.anchor);
+                needs_flush = true;
+            }
+            info.block = block;
+            if (info.blocks)
+                info.blocks[index] = block;
+            if (needs_flush) {
+                flush();
+            }
+        }
+        if (is_promise(promise)) {
+            const current_component = get_current_component();
+            promise.then(value => {
+                set_current_component(current_component);
+                update(info.then, 1, info.value, value);
+                set_current_component(null);
+            }, error => {
+                set_current_component(current_component);
+                update(info.catch, 2, info.error, error);
+                set_current_component(null);
+                if (!info.hasCatch) {
+                    throw error;
+                }
+            });
+            // if we previously had a then/catch block, destroy it
+            if (info.current !== info.pending) {
+                update(info.pending, 0);
+                return true;
+            }
+        }
+        else {
+            if (info.current !== info.then) {
+                update(info.then, 1, info.value, promise);
+                return true;
+            }
+            info.resolved = promise;
+        }
+    }
+    function update_await_block_branch(info, ctx, dirty) {
+        const child_ctx = ctx.slice();
+        const { resolved } = info;
+        if (info.current === info.then) {
+            child_ctx[info.value] = resolved;
+        }
+        if (info.current === info.catch) {
+            child_ctx[info.error] = resolved;
+        }
+        info.block.p(child_ctx, dirty);
     }
 
     const globals = (typeof window !== 'undefined'
@@ -380,25 +435,21 @@ var app = (function () {
         dispatch_dev('SvelteDOMRemove', { node });
         detach(node);
     }
-    function listen_dev(node, event, handler, options, has_prevent_default, has_stop_propagation) {
-        const modifiers = options === true ? ['capture'] : options ? Array.from(Object.keys(options)) : [];
-        if (has_prevent_default)
-            modifiers.push('preventDefault');
-        if (has_stop_propagation)
-            modifiers.push('stopPropagation');
-        dispatch_dev('SvelteDOMAddEventListener', { node, event, handler, modifiers });
-        const dispose = listen(node, event, handler, options);
-        return () => {
-            dispatch_dev('SvelteDOMRemoveEventListener', { node, event, handler, modifiers });
-            dispose();
-        };
-    }
     function attr_dev(node, attribute, value) {
         attr(node, attribute, value);
         if (value == null)
             dispatch_dev('SvelteDOMRemoveAttribute', { node, attribute });
         else
             dispatch_dev('SvelteDOMSetAttribute', { node, attribute, value });
+    }
+    function validate_each_argument(arg) {
+        if (typeof arg !== 'string' && !(arg && typeof arg === 'object' && 'length' in arg)) {
+            let msg = '{#each} only iterates over array-like objects.';
+            if (typeof Symbol === 'function' && arg && Symbol.iterator in arg) {
+                msg += ' You can use a spread to convert this iterable into an array.';
+            }
+            throw new Error(msg);
+        }
     }
     function validate_slots(name, slot, keys) {
         for (const slot_key of Object.keys(slot)) {
@@ -427,368 +478,62 @@ var app = (function () {
         $inject_state() { }
     }
 
-    const subscriber_queue = [];
-    /**
-     * Create a `Writable` store that allows both updating and reading by subscription.
-     * @param {*=}value initial value
-     * @param {StartStopNotifier=}start start and stop notifications for subscriptions
-     */
-    function writable(value, start = noop) {
-        let stop;
-        const subscribers = new Set();
-        function set(new_value) {
-            if (safe_not_equal(value, new_value)) {
-                value = new_value;
-                if (stop) { // store is ready
-                    const run_queue = !subscriber_queue.length;
-                    for (const subscriber of subscribers) {
-                        subscriber[1]();
-                        subscriber_queue.push(subscriber, value);
-                    }
-                    if (run_queue) {
-                        for (let i = 0; i < subscriber_queue.length; i += 2) {
-                            subscriber_queue[i][0](subscriber_queue[i + 1]);
-                        }
-                        subscriber_queue.length = 0;
-                    }
-                }
-            }
+    const isValidHex = (hex) => /^#([A-Fa-f0-9]{3,4}){1,2}$/.test(hex);
+    const getChunksFromString = (st, chunkSize) => st.match(new RegExp(`.{${chunkSize}}`, "g"));
+    const convertHexUnitTo256 = (hexStr) => parseInt(hexStr.repeat(2 / hexStr.length), 16);
+    const getAlphaFloat = (a, alpha) => {
+        if (typeof a !== "undefined") {
+            return a / 255;
         }
-        function update(fn) {
-            set(fn(value));
+        if ((typeof alpha != "number") || alpha < 0 || alpha > 1) {
+            return 1;
         }
-        function subscribe(run, invalidate = noop) {
-            const subscriber = [run, invalidate];
-            subscribers.add(subscriber);
-            if (subscribers.size === 1) {
-                stop = start(set) || noop;
-            }
-            run(value);
-            return () => {
-                subscribers.delete(subscriber);
-                if (subscribers.size === 0) {
-                    stop();
-                    stop = null;
-                }
-            };
+        return alpha;
+    };
+    const hexToRGBA = (hex, alpha) => {
+        if (!isValidHex(hex)) {
+            throw new Error("Invalid HEX");
         }
-        return { set, update, subscribe };
-    }
+        const chunkSize = Math.floor((hex.length - 1) / 3);
+        const hexArr = getChunksFromString(hex.slice(1), chunkSize);
+        if (!hexArr) {
+            throw new Error('Cannot obtain hex information');
+        }
+        const [r, g, b, a] = hexArr.map(convertHexUnitTo256);
+        const alphaFloat = alpha ? getAlphaFloat(a, alpha) : 1;
+        return { r, g, b, a: alphaFloat };
+    };
 
-    const addNewControllerForm = writable({
-        controllerHostname: '',
-        controllerIP: '0.0.0.0',
-        controllerType: 'pir-rgb',
-        defaultColor: '#FFFFFF',
-        alwaysOn: false,
-        accidentalTripDelay: 500,
-        durationOn: 5000,
-        fadeInSpeed: 500,
-        fadeOutSpeed: 750,
-    });
+    /* src\components\ControllerSettings\RGB-PIR.svelte generated by Svelte v3.46.5 */
 
-    /* src\components\AddNewControllerDialog.svelte generated by Svelte v3.46.5 */
-
-    const { Error: Error_1$1, console: console_1$1 } = globals;
-    const file$2 = "src\\components\\AddNewControllerDialog.svelte";
+    const { console: console_1$1 } = globals;
+    const file$2 = "src\\components\\ControllerSettings\\RGB-PIR.svelte";
 
     function create_fragment$2(ctx) {
-    	let dialog;
-    	let h2;
-    	let t1;
-    	let form;
-    	let p0;
-    	let label0;
-    	let t2;
-    	let input0;
-    	let t3;
-    	let p1;
-    	let label1;
-    	let t4;
-    	let input1;
-    	let t5;
-    	let p2;
-    	let label2;
-    	let t6;
-    	let select;
-    	let option;
-    	let t8;
-    	let p3;
-    	let label3;
-    	let t9;
-    	let input2;
-    	let t10;
-    	let p4;
-    	let label4;
-    	let t11;
-    	let input3;
-    	let t12;
-    	let p5;
-    	let label5;
-    	let t13;
-    	let input4;
-    	let t14;
-    	let p6;
-    	let label6;
-    	let t15;
-    	let input5;
-    	let t16;
-    	let p7;
-    	let label7;
-    	let t17;
-    	let input6;
-    	let t18;
-    	let p8;
-    	let label8;
-    	let t19;
-    	let input7;
-    	let t20;
     	let div;
-    	let button0;
-    	let t22;
-    	let button1;
-    	let mounted;
-    	let dispose;
+    	let input;
 
     	const block = {
     		c: function create() {
-    			dialog = element("dialog");
-    			h2 = element("h2");
-    			h2.textContent = "Please fill in the controller settings";
-    			t1 = space();
-    			form = element("form");
-    			p0 = element("p");
-    			label0 = element("label");
-    			t2 = text("Controller Hostname (the name that shows up in your WiFi for the board):\r\n                ");
-    			input0 = element("input");
-    			t3 = space();
-    			p1 = element("p");
-    			label1 = element("label");
-    			t4 = text("Controller IP Address (only use if hostname doesn't work):\r\n                ");
-    			input1 = element("input");
-    			t5 = space();
-    			p2 = element("p");
-    			label2 = element("label");
-    			t6 = text("Controller Type:\r\n                ");
-    			select = element("select");
-    			option = element("option");
-    			option.textContent = "Motion sensor on RGB LED Strip";
-    			t8 = space();
-    			p3 = element("p");
-    			label3 = element("label");
-    			t9 = text("Default Color:\r\n                ");
-    			input2 = element("input");
-    			t10 = space();
-    			p4 = element("p");
-    			label4 = element("label");
-    			t11 = text("Always on? (disable motion detection / only use light switch):\r\n                ");
-    			input3 = element("input");
-    			t12 = space();
-    			p5 = element("p");
-    			label5 = element("label");
-    			t13 = text("Accidental motion trip delay (in ms -> Waits for continuous motion for set time before triggering):\r\n                ");
-    			input4 = element("input");
-    			t14 = space();
-    			p6 = element("p");
-    			label6 = element("label");
-    			t15 = text("Default duration on after motion lost (0 = always/infinite):\r\n                ");
-    			input5 = element("input");
-    			t16 = space();
-    			p7 = element("p");
-    			label7 = element("label");
-    			t17 = text("Fade speed in (in ms):\r\n                ");
-    			input6 = element("input");
-    			t18 = space();
-    			p8 = element("p");
-    			label8 = element("label");
-    			t19 = text("Fade speed out (in ms):\r\n                ");
-    			input7 = element("input");
-    			t20 = space();
     			div = element("div");
-    			button0 = element("button");
-    			button0.textContent = "Confirm";
-    			t22 = space();
-    			button1 = element("button");
-    			button1.textContent = "Cancel";
-    			add_location(h2, file$2, 18, 4, 479);
-    			attr_dev(input0, "type", "text");
-    			add_location(input0, file$2, 22, 16, 678);
-    			add_location(label0, file$2, 21, 12, 581);
-    			add_location(p0, file$2, 20, 8, 564);
-    			attr_dev(input1, "type", "text");
-    			add_location(input1, file$2, 27, 16, 899);
-    			add_location(label1, file$2, 26, 12, 816);
-    			add_location(p1, file$2, 25, 8, 799);
-    			option.__value = "pir-rgb";
-    			option.value = option.__value;
-    			add_location(option, file$2, 33, 20, 1152);
-    			if (/*$addNewControllerForm*/ ctx[0].controllerType === void 0) add_render_callback(() => /*select_change_handler*/ ctx[4].call(select));
-    			add_location(select, file$2, 32, 16, 1072);
-    			add_location(label2, file$2, 31, 12, 1031);
-    			add_location(p2, file$2, 30, 8, 1014);
-    			attr_dev(input2, "type", "color");
-    			add_location(input2, file$2, 39, 16, 1364);
-    			add_location(label3, file$2, 38, 12, 1325);
-    			add_location(p3, file$2, 37, 8, 1308);
-    			attr_dev(input3, "type", "checkbox");
-    			add_location(input3, file$2, 44, 16, 1584);
-    			add_location(label4, file$2, 43, 12, 1497);
-    			add_location(p4, file$2, 42, 8, 1480);
-    			attr_dev(input4, "type", "number");
-    			add_location(input4, file$2, 49, 16, 1840);
-    			add_location(label5, file$2, 48, 12, 1716);
-    			add_location(p5, file$2, 47, 8, 1699);
-    			attr_dev(input5, "type", "number");
-    			add_location(input5, file$2, 54, 16, 2066);
-    			add_location(label6, file$2, 53, 12, 1981);
-    			add_location(p6, file$2, 52, 8, 1964);
-    			attr_dev(input6, "type", "number");
-    			add_location(input6, file$2, 59, 16, 2245);
-    			add_location(label7, file$2, 58, 12, 2198);
-    			add_location(p7, file$2, 57, 8, 2181);
-    			attr_dev(input7, "type", "number");
-    			add_location(input7, file$2, 64, 16, 2426);
-    			add_location(label8, file$2, 63, 12, 2378);
-    			add_location(p8, file$2, 62, 8, 2361);
-    			attr_dev(button0, "id", "confirm");
-    			button0.value = "default";
-    			add_location(button0, file$2, 68, 12, 2562);
-    			button1.value = "cancel";
-    			add_location(button1, file$2, 69, 12, 2665);
-    			add_location(div, file$2, 67, 8, 2543);
-    			attr_dev(form, "method", "dialog");
-    			add_location(form, file$2, 19, 4, 532);
-    			attr_dev(dialog, "class", "add-new-controller-dialog svelte-1tv3h5m");
-    			add_location(dialog, file$2, 17, 0, 431);
+    			input = element("input");
+    			attr_dev(input, "type", "color");
+    			add_location(input, file$2, 23, 4, 863);
+    			attr_dev(div, "class", "RGB-picker");
+    			add_location(div, file$2, 22, 0, 833);
     		},
     		l: function claim(nodes) {
-    			throw new Error_1$1("options.hydrate only works if the component was compiled with the `hydratable: true` option");
+    			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");
     		},
     		m: function mount(target, anchor) {
-    			insert_dev(target, dialog, anchor);
-    			append_dev(dialog, h2);
-    			append_dev(dialog, t1);
-    			append_dev(dialog, form);
-    			append_dev(form, p0);
-    			append_dev(p0, label0);
-    			append_dev(label0, t2);
-    			append_dev(label0, input0);
-    			set_input_value(input0, /*$addNewControllerForm*/ ctx[0].controllerHostname);
-    			append_dev(form, t3);
-    			append_dev(form, p1);
-    			append_dev(p1, label1);
-    			append_dev(label1, t4);
-    			append_dev(label1, input1);
-    			set_input_value(input1, /*$addNewControllerForm*/ ctx[0].controllerIP);
-    			append_dev(form, t5);
-    			append_dev(form, p2);
-    			append_dev(p2, label2);
-    			append_dev(label2, t6);
-    			append_dev(label2, select);
-    			append_dev(select, option);
-    			select_option(select, /*$addNewControllerForm*/ ctx[0].controllerType);
-    			append_dev(form, t8);
-    			append_dev(form, p3);
-    			append_dev(p3, label3);
-    			append_dev(label3, t9);
-    			append_dev(label3, input2);
-    			set_input_value(input2, /*$addNewControllerForm*/ ctx[0].defaultColor);
-    			append_dev(form, t10);
-    			append_dev(form, p4);
-    			append_dev(p4, label4);
-    			append_dev(label4, t11);
-    			append_dev(label4, input3);
-    			set_input_value(input3, /*$addNewControllerForm*/ ctx[0].alwaysOn);
-    			append_dev(form, t12);
-    			append_dev(form, p5);
-    			append_dev(p5, label5);
-    			append_dev(label5, t13);
-    			append_dev(label5, input4);
-    			set_input_value(input4, /*$addNewControllerForm*/ ctx[0].accidentalTripDelay);
-    			append_dev(form, t14);
-    			append_dev(form, p6);
-    			append_dev(p6, label6);
-    			append_dev(label6, t15);
-    			append_dev(label6, input5);
-    			set_input_value(input5, /*$addNewControllerForm*/ ctx[0].durationOn);
-    			append_dev(form, t16);
-    			append_dev(form, p7);
-    			append_dev(p7, label7);
-    			append_dev(label7, t17);
-    			append_dev(label7, input6);
-    			set_input_value(input6, /*$addNewControllerForm*/ ctx[0].fadeInSpeed);
-    			append_dev(form, t18);
-    			append_dev(form, p8);
-    			append_dev(p8, label8);
-    			append_dev(label8, t19);
-    			append_dev(label8, input7);
-    			set_input_value(input7, /*$addNewControllerForm*/ ctx[0].fadeOutSpeed);
-    			append_dev(form, t20);
-    			append_dev(form, div);
-    			append_dev(div, button0);
-    			append_dev(div, t22);
-    			append_dev(div, button1);
-
-    			if (!mounted) {
-    				dispose = [
-    					listen_dev(input0, "input", /*input0_input_handler*/ ctx[2]),
-    					listen_dev(input1, "input", /*input1_input_handler*/ ctx[3]),
-    					listen_dev(select, "change", /*select_change_handler*/ ctx[4]),
-    					listen_dev(input2, "input", /*input2_input_handler*/ ctx[5]),
-    					listen_dev(input3, "change", /*input3_change_handler*/ ctx[6]),
-    					listen_dev(input4, "input", /*input4_input_handler*/ ctx[7]),
-    					listen_dev(input5, "input", /*input5_input_handler*/ ctx[8]),
-    					listen_dev(input6, "input", /*input6_input_handler*/ ctx[9]),
-    					listen_dev(input7, "input", /*input7_input_handler*/ ctx[10]),
-    					listen_dev(button0, "click", /*onConfirmNewController*/ ctx[1], false, false, false)
-    				];
-
-    				mounted = true;
-    			}
+    			insert_dev(target, div, anchor);
+    			append_dev(div, input);
     		},
-    		p: function update(ctx, [dirty]) {
-    			if (dirty & /*$addNewControllerForm*/ 1 && input0.value !== /*$addNewControllerForm*/ ctx[0].controllerHostname) {
-    				set_input_value(input0, /*$addNewControllerForm*/ ctx[0].controllerHostname);
-    			}
-
-    			if (dirty & /*$addNewControllerForm*/ 1 && input1.value !== /*$addNewControllerForm*/ ctx[0].controllerIP) {
-    				set_input_value(input1, /*$addNewControllerForm*/ ctx[0].controllerIP);
-    			}
-
-    			if (dirty & /*$addNewControllerForm*/ 1) {
-    				select_option(select, /*$addNewControllerForm*/ ctx[0].controllerType);
-    			}
-
-    			if (dirty & /*$addNewControllerForm*/ 1) {
-    				set_input_value(input2, /*$addNewControllerForm*/ ctx[0].defaultColor);
-    			}
-
-    			if (dirty & /*$addNewControllerForm*/ 1) {
-    				set_input_value(input3, /*$addNewControllerForm*/ ctx[0].alwaysOn);
-    			}
-
-    			if (dirty & /*$addNewControllerForm*/ 1 && to_number(input4.value) !== /*$addNewControllerForm*/ ctx[0].accidentalTripDelay) {
-    				set_input_value(input4, /*$addNewControllerForm*/ ctx[0].accidentalTripDelay);
-    			}
-
-    			if (dirty & /*$addNewControllerForm*/ 1 && to_number(input5.value) !== /*$addNewControllerForm*/ ctx[0].durationOn) {
-    				set_input_value(input5, /*$addNewControllerForm*/ ctx[0].durationOn);
-    			}
-
-    			if (dirty & /*$addNewControllerForm*/ 1 && to_number(input6.value) !== /*$addNewControllerForm*/ ctx[0].fadeInSpeed) {
-    				set_input_value(input6, /*$addNewControllerForm*/ ctx[0].fadeInSpeed);
-    			}
-
-    			if (dirty & /*$addNewControllerForm*/ 1 && to_number(input7.value) !== /*$addNewControllerForm*/ ctx[0].fadeOutSpeed) {
-    				set_input_value(input7, /*$addNewControllerForm*/ ctx[0].fadeOutSpeed);
-    			}
-    		},
+    		p: noop,
     		i: noop,
     		o: noop,
     		d: function destroy(detaching) {
-    			if (detaching) detach_dev(dialog);
-    			mounted = false;
-    			run_all(dispose);
+    			if (detaching) detach_dev(div);
     		}
     	};
 
@@ -804,144 +549,253 @@ var app = (function () {
     }
 
     function instance$2($$self, $$props, $$invalidate) {
-    	let $addNewControllerForm;
-    	validate_store(addNewControllerForm, 'addNewControllerForm');
-    	component_subscribe($$self, addNewControllerForm, $$value => $$invalidate(0, $addNewControllerForm = $$value));
     	let { $$slots: slots = {}, $$scope } = $$props;
-    	validate_slots('AddNewControllerDialog', slots, []);
+    	validate_slots('RGB_PIR', slots, []);
+    	let { controllerIP } = $$props;
 
-    	async function onConfirmNewController() {
-    		const res = await fetch(`/api/add-controller`, {
-    			method: 'POST',
-    			body: JSON.stringify($addNewControllerForm)
-    		});
+    	onMount(() => {
+    		const input = document.querySelector('input');
 
-    		const text = await res.text();
+    		input === null || input === void 0
+    		? void 0
+    		: input.addEventListener('change', colorChosen);
+    	});
 
-    		if (res.ok) {
-    			console.log(text);
-    			return text;
-    		} else {
-    			throw new Error(text);
-    		}
+    	// Dispatcher for color change
+    	// const dispatch = createEventDispatcher();
+    	async function colorChosen(e) {
+    		var _a;
+
+    		const rgb = hexToRGBA((_a = e.target) === null || _a === void 0
+    		? void 0
+    		: _a.value);
+
+    		// dispatch('colorChange', RGB);
+    		console.log('Color changed! ' + rgb);
+
+    		const res = await fetch(`/api/proxy-change/rgb?ip=${controllerIP}&r=${rgb.r}&g=${rgb.g}&b=${rgb.b}`, { method: 'GET' });
+    		const json = await res.json();
+    		console.log(JSON.stringify(json));
     	}
 
-    	const writable_props = [];
+    	const writable_props = ['controllerIP'];
 
     	Object.keys($$props).forEach(key => {
-    		if (!~writable_props.indexOf(key) && key.slice(0, 2) !== '$$' && key !== 'slot') console_1$1.warn(`<AddNewControllerDialog> was created with unknown prop '${key}'`);
+    		if (!~writable_props.indexOf(key) && key.slice(0, 2) !== '$$' && key !== 'slot') console_1$1.warn(`<RGB_PIR> was created with unknown prop '${key}'`);
     	});
 
-    	function input0_input_handler() {
-    		$addNewControllerForm.controllerHostname = this.value;
-    		addNewControllerForm.set($addNewControllerForm);
-    	}
-
-    	function input1_input_handler() {
-    		$addNewControllerForm.controllerIP = this.value;
-    		addNewControllerForm.set($addNewControllerForm);
-    	}
-
-    	function select_change_handler() {
-    		$addNewControllerForm.controllerType = select_value(this);
-    		addNewControllerForm.set($addNewControllerForm);
-    	}
-
-    	function input2_input_handler() {
-    		$addNewControllerForm.defaultColor = this.value;
-    		addNewControllerForm.set($addNewControllerForm);
-    	}
-
-    	function input3_change_handler() {
-    		$addNewControllerForm.alwaysOn = this.value;
-    		addNewControllerForm.set($addNewControllerForm);
-    	}
-
-    	function input4_input_handler() {
-    		$addNewControllerForm.accidentalTripDelay = to_number(this.value);
-    		addNewControllerForm.set($addNewControllerForm);
-    	}
-
-    	function input5_input_handler() {
-    		$addNewControllerForm.durationOn = to_number(this.value);
-    		addNewControllerForm.set($addNewControllerForm);
-    	}
-
-    	function input6_input_handler() {
-    		$addNewControllerForm.fadeInSpeed = to_number(this.value);
-    		addNewControllerForm.set($addNewControllerForm);
-    	}
-
-    	function input7_input_handler() {
-    		$addNewControllerForm.fadeOutSpeed = to_number(this.value);
-    		addNewControllerForm.set($addNewControllerForm);
-    	}
+    	$$self.$$set = $$props => {
+    		if ('controllerIP' in $$props) $$invalidate(0, controllerIP = $$props.controllerIP);
+    	};
 
     	$$self.$capture_state = () => ({
-    		addNewControllerForm,
-    		onConfirmNewController,
-    		$addNewControllerForm
+    		onMount,
+    		hexToRGBA,
+    		controllerIP,
+    		colorChosen
     	});
 
-    	return [
-    		$addNewControllerForm,
-    		onConfirmNewController,
-    		input0_input_handler,
-    		input1_input_handler,
-    		select_change_handler,
-    		input2_input_handler,
-    		input3_change_handler,
-    		input4_input_handler,
-    		input5_input_handler,
-    		input6_input_handler,
-    		input7_input_handler
-    	];
+    	$$self.$inject_state = $$props => {
+    		if ('controllerIP' in $$props) $$invalidate(0, controllerIP = $$props.controllerIP);
+    	};
+
+    	if ($$props && "$$inject" in $$props) {
+    		$$self.$inject_state($$props.$$inject);
+    	}
+
+    	return [controllerIP];
     }
 
-    class AddNewControllerDialog extends SvelteComponentDev {
+    class RGB_PIR extends SvelteComponentDev {
     	constructor(options) {
     		super(options);
-    		init(this, options, instance$2, create_fragment$2, safe_not_equal, {});
+    		init(this, options, instance$2, create_fragment$2, safe_not_equal, { controllerIP: 0 });
 
     		dispatch_dev("SvelteRegisterComponent", {
     			component: this,
-    			tagName: "AddNewControllerDialog",
+    			tagName: "RGB_PIR",
     			options,
     			id: create_fragment$2.name
     		});
+
+    		const { ctx } = this.$$;
+    		const props = options.props || {};
+
+    		if (/*controllerIP*/ ctx[0] === undefined && !('controllerIP' in props)) {
+    			console_1$1.warn("<RGB_PIR> was created without expected prop 'controllerIP'");
+    		}
+    	}
+
+    	get controllerIP() {
+    		throw new Error("<RGB_PIR>: Props cannot be read directly from the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
+    	}
+
+    	set controllerIP(value) {
+    		throw new Error("<RGB_PIR>: Props cannot be set directly on the component instance unless compiling with 'accessors: true' or '<svelte:options accessors/>'");
     	}
     }
 
     /* src\components\ControllerList.svelte generated by Svelte v3.46.5 */
 
-    const { Error: Error_1, console: console_1 } = globals;
+    const { Object: Object_1, console: console_1 } = globals;
     const file$1 = "src\\components\\ControllerList.svelte";
 
-    // (30:0) {#if addNewDialogOpen}
-    function create_if_block(ctx) {
-    	let addnewcontrollerdialog;
+    function get_each_context(ctx, list, i) {
+    	const child_ctx = ctx.slice();
+    	child_ctx[3] = list[i];
+    	return child_ctx;
+    }
+
+    // (1:0) <script lang="ts">import { onMount }
+    function create_catch_block(ctx) {
+    	const block = {
+    		c: noop,
+    		m: noop,
+    		p: noop,
+    		i: noop,
+    		o: noop,
+    		d: noop
+    	};
+
+    	dispatch_dev("SvelteRegisterBlock", {
+    		block,
+    		id: create_catch_block.name,
+    		type: "catch",
+    		source: "(1:0) <script lang=\\\"ts\\\">import { onMount }",
+    		ctx
+    	});
+
+    	return block;
+    }
+
+    // (30:42)          {#each controllers as controller}
+    function create_then_block(ctx) {
+    	let each_1_anchor;
     	let current;
-    	addnewcontrollerdialog = new AddNewControllerDialog({ $$inline: true });
+    	let each_value = /*controllers*/ ctx[2];
+    	validate_each_argument(each_value);
+    	let each_blocks = [];
+
+    	for (let i = 0; i < each_value.length; i += 1) {
+    		each_blocks[i] = create_each_block(get_each_context(ctx, each_value, i));
+    	}
+
+    	const out = i => transition_out(each_blocks[i], 1, 1, () => {
+    		each_blocks[i] = null;
+    	});
 
     	const block = {
     		c: function create() {
-    			create_component(addnewcontrollerdialog.$$.fragment);
+    			for (let i = 0; i < each_blocks.length; i += 1) {
+    				each_blocks[i].c();
+    			}
+
+    			each_1_anchor = empty();
     		},
     		m: function mount(target, anchor) {
-    			mount_component(addnewcontrollerdialog, target, anchor);
+    			for (let i = 0; i < each_blocks.length; i += 1) {
+    				each_blocks[i].m(target, anchor);
+    			}
+
+    			insert_dev(target, each_1_anchor, anchor);
     			current = true;
+    		},
+    		p: function update(ctx, dirty) {
+    			if (dirty & /*controllers$*/ 1) {
+    				each_value = /*controllers*/ ctx[2];
+    				validate_each_argument(each_value);
+    				let i;
+
+    				for (i = 0; i < each_value.length; i += 1) {
+    					const child_ctx = get_each_context(ctx, each_value, i);
+
+    					if (each_blocks[i]) {
+    						each_blocks[i].p(child_ctx, dirty);
+    						transition_in(each_blocks[i], 1);
+    					} else {
+    						each_blocks[i] = create_each_block(child_ctx);
+    						each_blocks[i].c();
+    						transition_in(each_blocks[i], 1);
+    						each_blocks[i].m(each_1_anchor.parentNode, each_1_anchor);
+    					}
+    				}
+
+    				group_outros();
+
+    				for (i = each_value.length; i < each_blocks.length; i += 1) {
+    					out(i);
+    				}
+
+    				check_outros();
+    			}
     		},
     		i: function intro(local) {
     			if (current) return;
-    			transition_in(addnewcontrollerdialog.$$.fragment, local);
+
+    			for (let i = 0; i < each_value.length; i += 1) {
+    				transition_in(each_blocks[i]);
+    			}
+
     			current = true;
     		},
     		o: function outro(local) {
-    			transition_out(addnewcontrollerdialog.$$.fragment, local);
+    			each_blocks = each_blocks.filter(Boolean);
+
+    			for (let i = 0; i < each_blocks.length; i += 1) {
+    				transition_out(each_blocks[i]);
+    			}
+
     			current = false;
     		},
     		d: function destroy(detaching) {
-    			destroy_component(addnewcontrollerdialog, detaching);
+    			destroy_each(each_blocks, detaching);
+    			if (detaching) detach_dev(each_1_anchor);
+    		}
+    	};
+
+    	dispatch_dev("SvelteRegisterBlock", {
+    		block,
+    		id: create_then_block.name,
+    		type: "then",
+    		source: "(30:42)          {#each controllers as controller}",
+    		ctx
+    	});
+
+    	return block;
+    }
+
+    // (32:12) {#if controller.controllerType == '1' && controller.controllerIP == '192.168.4.2'}
+    function create_if_block(ctx) {
+    	let rgbpir;
+    	let current;
+
+    	rgbpir = new RGB_PIR({
+    			props: {
+    				controllerIP: /*controller*/ ctx[3].controllerIP
+    			},
+    			$$inline: true
+    		});
+
+    	const block = {
+    		c: function create() {
+    			create_component(rgbpir.$$.fragment);
+    		},
+    		m: function mount(target, anchor) {
+    			mount_component(rgbpir, target, anchor);
+    			current = true;
+    		},
+    		p: noop,
+    		i: function intro(local) {
+    			if (current) return;
+    			transition_in(rgbpir.$$.fragment, local);
+    			current = true;
+    		},
+    		o: function outro(local) {
+    			transition_out(rgbpir.$$.fragment, local);
+    			current = false;
+    		},
+    		d: function destroy(detaching) {
+    			destroy_component(rgbpir, detaching);
     		}
     	};
 
@@ -949,72 +803,31 @@ var app = (function () {
     		block,
     		id: create_if_block.name,
     		type: "if",
-    		source: "(30:0) {#if addNewDialogOpen}",
+    		source: "(32:12) {#if controller.controllerType == '1' && controller.controllerIP == '192.168.4.2'}",
     		ctx
     	});
 
     	return block;
     }
 
-    function create_fragment$1(ctx) {
-    	let div;
-    	let t0;
-    	let t1;
-    	let button;
+    // (31:8) {#each controllers as controller}
+    function create_each_block(ctx) {
+    	let if_block_anchor;
     	let current;
-    	let mounted;
-    	let dispose;
-    	let if_block = /*addNewDialogOpen*/ ctx[0] && create_if_block(ctx);
+    	let if_block = /*controller*/ ctx[3].controllerType == '1' && /*controller*/ ctx[3].controllerIP == '192.168.4.2' && create_if_block(ctx);
 
     	const block = {
     		c: function create() {
-    			div = element("div");
-    			t0 = space();
     			if (if_block) if_block.c();
-    			t1 = space();
-    			button = element("button");
-    			button.textContent = "Add New Controller";
-    			attr_dev(div, "class", "controller-list-container");
-    			add_location(div, file$1, 23, 0, 577);
-    			add_location(button, file$1, 33, 0, 782);
-    		},
-    		l: function claim(nodes) {
-    			throw new Error_1("options.hydrate only works if the component was compiled with the `hydratable: true` option");
+    			if_block_anchor = empty();
     		},
     		m: function mount(target, anchor) {
-    			insert_dev(target, div, anchor);
-    			insert_dev(target, t0, anchor);
     			if (if_block) if_block.m(target, anchor);
-    			insert_dev(target, t1, anchor);
-    			insert_dev(target, button, anchor);
+    			insert_dev(target, if_block_anchor, anchor);
     			current = true;
-
-    			if (!mounted) {
-    				dispose = listen_dev(button, "click", /*onAddNewClick*/ ctx[1], false, false, false);
-    				mounted = true;
-    			}
     		},
-    		p: function update(ctx, [dirty]) {
-    			if (/*addNewDialogOpen*/ ctx[0]) {
-    				if (if_block) {
-    					if (dirty & /*addNewDialogOpen*/ 1) {
-    						transition_in(if_block, 1);
-    					}
-    				} else {
-    					if_block = create_if_block(ctx);
-    					if_block.c();
-    					transition_in(if_block, 1);
-    					if_block.m(t1.parentNode, t1);
-    				}
-    			} else if (if_block) {
-    				group_outros();
-
-    				transition_out(if_block, 1, 1, () => {
-    					if_block = null;
-    				});
-
-    				check_outros();
-    			}
+    		p: function update(ctx, dirty) {
+    			if (/*controller*/ ctx[3].controllerType == '1' && /*controller*/ ctx[3].controllerIP == '192.168.4.2') if_block.p(ctx, dirty);
     		},
     		i: function intro(local) {
     			if (current) return;
@@ -1026,13 +839,101 @@ var app = (function () {
     			current = false;
     		},
     		d: function destroy(detaching) {
-    			if (detaching) detach_dev(div);
-    			if (detaching) detach_dev(t0);
     			if (if_block) if_block.d(detaching);
-    			if (detaching) detach_dev(t1);
-    			if (detaching) detach_dev(button);
-    			mounted = false;
-    			dispose();
+    			if (detaching) detach_dev(if_block_anchor);
+    		}
+    	};
+
+    	dispatch_dev("SvelteRegisterBlock", {
+    		block,
+    		id: create_each_block.name,
+    		type: "each",
+    		source: "(31:8) {#each controllers as controller}",
+    		ctx
+    	});
+
+    	return block;
+    }
+
+    // (1:0) <script lang="ts">import { onMount }
+    function create_pending_block(ctx) {
+    	const block = {
+    		c: noop,
+    		m: noop,
+    		p: noop,
+    		i: noop,
+    		o: noop,
+    		d: noop
+    	};
+
+    	dispatch_dev("SvelteRegisterBlock", {
+    		block,
+    		id: create_pending_block.name,
+    		type: "pending",
+    		source: "(1:0) <script lang=\\\"ts\\\">import { onMount }",
+    		ctx
+    	});
+
+    	return block;
+    }
+
+    function create_fragment$1(ctx) {
+    	let div;
+    	let current;
+
+    	let info = {
+    		ctx,
+    		current: null,
+    		token: null,
+    		hasCatch: false,
+    		pending: create_pending_block,
+    		then: create_then_block,
+    		catch: create_catch_block,
+    		value: 2,
+    		blocks: [,,,]
+    	};
+
+    	handle_promise(/*controllers$*/ ctx[0], info);
+
+    	const block = {
+    		c: function create() {
+    			div = element("div");
+    			info.block.c();
+    			attr_dev(div, "class", "controller-list-container");
+    			add_location(div, file$1, 24, 0, 746);
+    		},
+    		l: function claim(nodes) {
+    			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");
+    		},
+    		m: function mount(target, anchor) {
+    			insert_dev(target, div, anchor);
+    			info.block.m(div, info.anchor = null);
+    			info.mount = () => div;
+    			info.anchor = null;
+    			current = true;
+    		},
+    		p: function update(new_ctx, [dirty]) {
+    			ctx = new_ctx;
+    			update_await_block_branch(info, ctx, dirty);
+    		},
+    		i: function intro(local) {
+    			if (current) return;
+    			transition_in(info.block);
+    			current = true;
+    		},
+    		o: function outro(local) {
+    			for (let i = 0; i < 3; i += 1) {
+    				const block = info.blocks[i];
+    				transition_out(block);
+    			}
+
+    			current = false;
+    		},
+    		d: function destroy(detaching) {
+    			if (detaching) detach_dev(div);
+    			info.block.d();
+    			info.token = null;
+    			info = null;
     		}
     	};
 
@@ -1049,52 +950,56 @@ var app = (function () {
 
     async function getControllersList() {
     	const res = await fetch(`/api/get-controller-list`);
-    	const text = await res.text();
+    	const body = await res.json();
+    	const controllers = [];
 
     	if (res.ok) {
-    		console.log(text);
-    		return text;
-    	} else {
-    		throw new Error(text);
+    		Object.keys(body).map((key, index) => {
+    			controllers.push({
+    				controllerIP: key,
+    				controllerType: body[key][0]
+    			});
+
+    			console.log(controllers);
+    		});
     	}
+
+    	return controllers;
     }
 
     function instance$1($$self, $$props, $$invalidate) {
     	let { $$slots: slots = {}, $$scope } = $$props;
     	validate_slots('ControllerList', slots, []);
     	let addNewDialogOpen = false;
+    	const controllers$ = getControllersList();
 
     	onMount(() => {
-    		getControllersList();
+    		
     	});
-
-    	function onAddNewClick() {
-    		$$invalidate(0, addNewDialogOpen = true);
-    	}
 
     	const writable_props = [];
 
-    	Object.keys($$props).forEach(key => {
+    	Object_1.keys($$props).forEach(key => {
     		if (!~writable_props.indexOf(key) && key.slice(0, 2) !== '$$' && key !== 'slot') console_1.warn(`<ControllerList> was created with unknown prop '${key}'`);
     	});
 
     	$$self.$capture_state = () => ({
     		onMount,
-    		AddNewControllerDialog,
+    		RgbPir: RGB_PIR,
     		addNewDialogOpen,
-    		getControllersList,
-    		onAddNewClick
+    		controllers$,
+    		getControllersList
     	});
 
     	$$self.$inject_state = $$props => {
-    		if ('addNewDialogOpen' in $$props) $$invalidate(0, addNewDialogOpen = $$props.addNewDialogOpen);
+    		if ('addNewDialogOpen' in $$props) addNewDialogOpen = $$props.addNewDialogOpen;
     	};
 
     	if ($$props && "$$inject" in $$props) {
     		$$self.$inject_state($$props.$$inject);
     	}
 
-    	return [addNewDialogOpen, onAddNewClick];
+    	return [controllers$];
     }
 
     class ControllerList extends SvelteComponentDev {

@@ -25,6 +25,7 @@ class LEDControl {
             int g,
             int b
         );
+        void handleColorChange(ColorSettings currentSettings, ColorSettings newSettings);
         void initBootedSettings(Settings settings);
 };
 

@@ -11,6 +11,7 @@ class WebApp {
 
         void handleUIRouting();
         void handleServiceRouting();
+        static bool pingRemote(String url);
 
     public:
         WiFiClient client;
