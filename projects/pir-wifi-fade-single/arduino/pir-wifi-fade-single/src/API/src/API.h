@@ -2,25 +2,25 @@
 #include <WiFi.h>
 #include <ESPAsyncWebServer.h>
 
-#ifndef Web_App
-#define Web_App
+#include "Settings/src/Settings.h"
 
-class WebApp {
+#ifndef API_h
+#define API_h
+
+class API {
     private:
         AsyncWebServer *_server;
         unsigned long currentTime = millis();
         unsigned long previousTime = 0;
         const long timeoutTime = 2000;
 
-        void handleUIRouting();
-        void handleServiceRouting();
         static void onRGBAChange();
 
     public:
         WiFiClient client;
-        
-        void handleClient(AsyncWebServer *server);
-        void initServer();
+        void handleServiceRouting(AsyncWebServer *server);
+        Settings initGetSettings();
+
 };
 
 #endif

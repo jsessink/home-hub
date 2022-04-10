@@ -9,12 +9,30 @@
 #include "ControllerManagement.h"
 #include "HTTP/src/Response.h"
 
-String ControllerManagement::getControllerList()
+StaticJsonDocument<512> ControllerManagement::getControllerList()
 {
-    return "OK";
+    // Get current JSON settings from EEPROM
+    StaticJsonDocument<512> doc;
+
+    // Check if any data exists first
+    Serial.println("Checking for existing EEPROM JSON data.");
+    EepromStream eepromStream(0, 512);
+
+    Serial.println("EEPROM found data on address 0, attempting to deserialize.");
+    DeserializationError error = deserializeJson(doc, eepromStream);
+    
+    if (error)
+    {
+        Serial.print(F("EEPROM deserializeJson() failed: "));
+        Serial.println(error.f_str());
+        return doc;
+    }
+
+    Serial.println("Success, returning results");
+    return doc;
 }
 
-Response ControllerManagement::addController(AsyncWebServerRequest *request, StaticJsonDocument<200> doc, char* json)
+Response ControllerManagement::addController(AsyncWebServerRequest *request, StaticJsonDocument<512> doc, char* json)
 {
     
     String newControllerHostname = doc["controllerHostname"];
@@ -58,14 +76,13 @@ Response ControllerManagement::addController(AsyncWebServerRequest *request, Sta
     http.addHeader("Content-Type", "application/x-www-form-urlencoded");
     
     // Send the original request's JSON to be deserialized on the remote controller
-    int httpResponseCode = http.POST(json);
-
+    http.POST(json);
 
     // Get current JSON settings from EEPROM
-    StaticJsonDocument<200> updatedDoc;
+    StaticJsonDocument<512> updatedDoc;
 
     // Check if any data exists first
-    StaticJsonDocument<200> existingDoc;
+    StaticJsonDocument<512> existingDoc;
     EEPROM.get(0, existingDoc);
 
     if (!existingDoc.isNull())
@@ -92,7 +109,6 @@ Response ControllerManagement::addController(AsyncWebServerRequest *request, Sta
     {
         updatedDoc = doc;
     }
-
 
     // Store Hostname, IP, and useIPRequired on the host controller partition
     EepromStream eepromStream(0, EEPROM.length());
