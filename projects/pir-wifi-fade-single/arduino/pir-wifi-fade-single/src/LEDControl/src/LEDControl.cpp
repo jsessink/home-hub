@@ -37,38 +37,33 @@ void LEDControl::handleColorChange(ColorSettings currentSettings, ColorSettings 
 
     Serial.println("Attempting to change the color of the lights.");
 
-    Serial.println("Current red: ");
-    Serial.println(currentSettings.colorR);
-
-    Serial.println("New red: ");
-    Serial.println(newSettings.colorR);
     do
     {
         if (currentSettings.colorR != newSettings.colorR) {
-            Serial.println("Red");
             currentSettings.colorR += rValDirection;
             ledcWrite(redChannel, currentSettings.colorR);
         }
 
         if (currentSettings.colorG != newSettings.colorG) {
-            Serial.println("Green");
             currentSettings.colorG += gValDirection;
             ledcWrite(greenChannel, currentSettings.colorG);
         }
 
         if (currentSettings.colorB != newSettings.colorB) {
-            Serial.println("Blue");
             currentSettings.colorB += bValDirection;
             ledcWrite(blueChannel, currentSettings.colorB);
         }
 
-        delay(10);
+        delay(1);
     } while (
-        currentSettings.colorR != newSettings.colorR &&
-        currentSettings.colorG != newSettings.colorG &&
+        currentSettings.colorR != newSettings.colorR ||
+        currentSettings.colorG != newSettings.colorG ||
         currentSettings.colorB != newSettings.colorB
     );
+    
     Serial.println("All set!");
+
+    return;
 }
 
 void LEDControl::initBootedSettings(Settings settings)

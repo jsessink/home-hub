@@ -3,8 +3,8 @@
 
 namespace ControllerConfig
 {
-    enum controllerType {
-        PIRRGB = 1
+    enum ControllerType {
+        PIR_RGB
     };
 }
 

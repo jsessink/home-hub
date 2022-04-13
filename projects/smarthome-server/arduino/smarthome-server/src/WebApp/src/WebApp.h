@@ -15,7 +15,6 @@ class WebApp {
 
     public:
         WiFiClient client;
-        
         void handleClient(AsyncWebServer *server);
 };
 

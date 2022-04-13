@@ -4,8 +4,8 @@
 #include <AsyncElegantOTA.h>
 #include <StreamUtils.h>
 
-#include "C:/projects/_personal/arduino/projects/_shared/WiFiConfig.h"
-#include "C:/projects/_personal/arduino/projects/_shared/AccessPointConfig.h"
+#include <WiFiConfig.h>
+#include <AccessPointConfig.h>
 
 #include "WebApp/src/WebApp.h"
 #include "AccessPointAPI/src/AccessPointAPI.h"
@@ -16,22 +16,47 @@ AccessPointAPI accessPointAPI;
 // Set web server port number to 80
 AsyncWebServer server(80);
 
-// void onWifiEvent(WiFiEvent_t event)
+// So, onWifiEvent has proven to be unreliable. Going with a ping every so often instead to see if IP Addresses are still active/online.
+//  Since we don't know if they just go offline, or are no longer a part of the network, 
+//  we'll have to match a hostname to an IP (and if there is a duplicate, but the dupe is offline, then remove that from the list).
+
+// void onWifiEvent(WiFiEvent_t event, WiFiEventInfo_t info)
 // {
 //   switch (event) {
 //     case SYSTEM_EVENT_STA_CONNECTED:
 //       Serial.println("ESP32 Connected to WiFi Network");
 //       break;
-//     case SYSTEM_EVENT_AP_START:
-//       Serial.println("ESP32 soft AP started");
-//       break;
 //     case SYSTEM_EVENT_AP_STACONNECTED:
 //       Serial.println("Station connected to ESP32 soft AP");
 //       Serial.println("Station IP - ");
-//       Serial.println(event);
+
+//       Serial.print(ip4_addr1(&(info.got_ip.ip_info.ip)));
+//       Serial.print(".");
+//       Serial.print(ip4_addr2(&(info.got_ip.ip_info.ip)));
+//       Serial.print(".");
+//       Serial.print(ip4_addr3(&(info.got_ip.ip_info.ip)));
+//       Serial.print(".");
+//       Serial.print(ip4_addr4(&(info.got_ip.ip_info.ip)));
+
+//       Serial.println();
+//       Serial.println(IPAddress(info.got_ip.ip_info.ip.addr));
+
 //       break;
 //     case SYSTEM_EVENT_AP_STADISCONNECTED:
 //       Serial.println("Station disconnected from ESP32 soft AP");
+//       Serial.println("Station IP - ");
+
+//       Serial.print(ip4_addr1(&(info.got_ip.ip_info.ip)));
+//       Serial.print(".");
+//       Serial.print(ip4_addr2(&(info.got_ip.ip_info.ip)));
+//       Serial.print(".");
+//       Serial.print(ip4_addr3(&(info.got_ip.ip_info.ip)));
+//       Serial.print(".");
+//       Serial.print(ip4_addr4(&(info.got_ip.ip_info.ip)));
+
+//       Serial.println();
+//       Serial.println(IPAddress(info.got_ip.ip_info.ip.addr));
+
 //       break;
 //     default: break;
 //   }
@@ -61,7 +86,6 @@ void setup()
   Serial.print(HUBHostName);
   Serial.println("");
   WiFi.setHostname(HUBHostName);
-  // WiFi.onEvent(onWifiEvent);
   WiFi.mode(WIFI_MODE_APSTA);
 
   // Connect to Home WiFi network with SSID and password
@@ -92,14 +116,6 @@ void setup()
   Serial.println("AP IP address is - ");
   Serial.print(IP);
   Serial.println("");
-
-
-  // Setup for SPIFFS for accessing data storage on the ESP32 flash memory
-  if (!SPIFFS.begin(true))
-  {
-    Serial.println("An Error has occurred while mounting SPIFFS");
-    return;
-  }
 
   // Handle requests from the clientside webapp
   webApp.handleClient(&server);

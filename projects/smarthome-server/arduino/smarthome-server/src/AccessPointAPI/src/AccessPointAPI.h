@@ -8,7 +8,7 @@ class AccessPointAPI {
     private:
         AsyncWebServer *_server;
 
-    public:        
+      public:        
         void handleAPServiceRouting(AsyncWebServer *server);
 };
 

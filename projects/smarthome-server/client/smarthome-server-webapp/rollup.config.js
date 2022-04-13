@@ -61,8 +61,9 @@ export default {
 		css({ output: 'bundle.css' }),
 
 		typescript({
-            sourceMap: !production
-        }),
+        rootDir: './src',
+        sourceMap: !production
+    }),
 
 		// If you have external dependencies installed from
 		// npm, you'll most likely need these plugins. In

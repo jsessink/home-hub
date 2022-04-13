@@ -1,36 +1,45 @@
 <script lang="ts">
-    import { onMount, createEventDispatcher } from 'svelte';
-    import { hexToRGBA } from '../../util/hex-to-rgba';
+  import { onMount } from "svelte";
+  import { hexToRGBA, rgbToHex } from "../../util/hex-to-rgba";
 
-    export let controllerIP;
+  export let controllerIP;
 
-    onMount(() => {
-        const input = document.querySelector('input');
-        input?.addEventListener('change', colorChosen);
-    });
+  let currentColorFetch = getCurrentColor();
 
-    // Dispatcher for color change
-    // const dispatch = createEventDispatcher();
+  async function getCurrentColor() {
+    const res = await fetch(`/api/proxy/get-current-rgb?ip=${controllerIP}`);
+    const body = await res.json();
 
-    async function colorChosen(e: InputEvent) {
-        const rgb = hexToRGBA((e.target as HTMLInputElement)?.value);
-        // dispatch('colorChange', RGB);
-
-        console.log('Color changed! ' + rgb);
-
-        const res = await fetch(`/api/proxy-change/rgb?ip=${controllerIP}&r=${rgb.r}&g=${rgb.g}&b=${rgb.b}`, {
-			method: 'GET',
-		})
-		
-		const json = await res.json()
-		console.log(JSON.stringify(json));
+    if (res.ok && body.hasOwnProperty('r')) {
+      return rgbToHex(body.r, body.g, body.b);
     }
+  }
+
+  onMount(() => {});
+
+  const onChange = e => colorChosen(e);
+  async function colorChosen(e: Event) {
+    const rgb = hexToRGBA((e.target as HTMLInputElement)?.value);
+    const res = await fetch(
+      `/api/proxy/rgb?ip=${controllerIP}&r=${rgb.r}&g=${rgb.g}&b=${rgb.b}`,
+      {
+        method: "GET",
+      }
+    );
+
+    await res.json();
+  }
 </script>
 
 <div class="RGB-picker">
-    <input type="color" />
+  {#await currentColorFetch}
+    <p>... Getting online status and settings ...</p>
+  {:then currentColor}
+    <input type="color" value={currentColor} on:change={onChange} />
+  {:catch error}
+    {controllerIP} Offline
+  {/await}
 </div>
 
 <style>
-
 </style>

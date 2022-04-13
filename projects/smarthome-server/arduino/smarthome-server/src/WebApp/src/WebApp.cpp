@@ -35,8 +35,48 @@ void WebApp::handleUIRouting()
 
 void WebApp::handleServiceRouting()
 {
-    _server->on("/api/proxy-change/rgb", HTTP_GET, [](AsyncWebServerRequest *request) {
-        Serial.println("Received request to change color");
+    _server->on("/api/proxy/get-current-rgb", HTTP_GET, [](AsyncWebServerRequest *request) {
+      Serial.println("Received proxy request to get current color");
+
+      String ip = String("http://" + request->getParam("ip")->value());
+
+      // Ping remote controller to ensure it is ready to GET
+      bool isReady = WebApp::pingRemote(ip);
+      if (!isReady)
+      {
+        Response response;
+        response.message = "Remote device not ready to receive input";
+        response.statusCode = 503;
+        request->send(response.statusCode, String(), response.message);
+        return;
+      }
+
+      String endpoint = String("http://" + ip + "/api/get-current-rgb");
+
+      HTTPClient http;
+      http.begin(endpoint);
+
+      Serial.println("Attempting GET");
+      // Send the original request's JSON to be deserialized on the remote controller
+      int statusCode = http.GET();
+      Serial.println("Status received: ");
+      Serial.println(statusCode);
+
+      if (statusCode == 200)
+      {
+        request->send(200, "application/json", http.getString());
+      } 
+      else 
+      {
+        request->send(statusCode);
+      }
+
+      // Free up resources
+      http.end();
+    });
+  
+    _server->on("/api/proxy/rgb", HTTP_GET, [](AsyncWebServerRequest *request) {
+        Serial.println("Received proxy request to change color");
 
         // TODO: Set by controller type
         // Pass the body to the controller
@@ -52,13 +92,10 @@ void WebApp::handleServiceRouting()
         {
             Response response;
             response.message = "Remote device not ready to receive input";
-            response.statusCode = 500;
+            response.statusCode = 503;
             request->send(response.statusCode, String(), response.message);
             return;
         }
-
-        Serial.println("ip:" + ip);
-        Serial.println("rgb:" + r + g + b);
 
         String endpoint = ip + "/api/rgb-change?r=" + r + "&g=" + g + "&b=" + b;
 
@@ -66,7 +103,6 @@ void WebApp::handleServiceRouting()
         http.begin("http://" + endpoint);
 
         Serial.println("Attempting GET");
-
         // Send the original request's JSON to be deserialized on the remote controller
         int statusCode = http.GET();
         Serial.println("Status received: ");
@@ -87,38 +123,6 @@ void WebApp::handleServiceRouting()
         
         request->send(200, "text/plain", json);
     });
-
-    _server->on("/api/add-controller", HTTP_POST,
-        [](AsyncWebServerRequest *request)
-        {
-            // Handle basic requests without a body
-        },
-        [](AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data, size_t len, bool final)
-        {
-            // Handle file uploads
-        },
-        [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
-        {
-            // Handle requests with body -- https://github.com/me-no-dev/ESPAsyncWebServer/issues/195
-            // Serial.println(String("data=") + (char*)data);
-            char* json = (char*)data;
-
-             // Deserialize the JSON document
-            StaticJsonDocument<200> doc;
-            DeserializationError error = deserializeJson(doc, json);
-
-            // Test if parsing succeeds.
-            if (error) {
-                Serial.print(F("deserializeJson() failed: "));
-                Serial.println(error.f_str());
-                return;
-            }
-
-            ControllerManagement controllerManagement;
-            Response response = controllerManagement.addController(request, doc, json);
-
-            request->send(response.statusCode, "text/plain", response.message);
-        });
 }
 
 void WebApp::handleClient(AsyncWebServer *server)
