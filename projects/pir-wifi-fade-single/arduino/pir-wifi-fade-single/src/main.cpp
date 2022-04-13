@@ -4,12 +4,15 @@
 #include <AsyncElegantOTA.h>
 #include <HTTPClient.h>
 
-#include "C:/projects/_personal/arduino/projects/_shared/AccessPointConfig.h"
-#include "C:/projects/_personal/arduino/projects/_shared/ControllerConfig.h"
+#include <ControllerConfig.h>
+#include <AccessPointConfig.h>
+#include <DeviceList.h>
 
 #include "API/src/API.h"
 #include "LEDControl/src/LEDControl.h"
 #include "Settings/src/Settings.h"
+
+using namespace DeviceList;
 
 LEDControl ledControl;
 API api;
@@ -33,9 +36,21 @@ void checkWiFiStatusAndConnect()
       }
 
       Serial.println("Reconnected!");
+
+      // Let host know we exist again by doing a GET request to a specific endpoint
+      // Send default data to remote controller to store on its own flash memory to offload that data so it can be used "offline" if necessary
+      HTTPClient http;
+      String endpoint = String("http://" + WiFi.dnsIP().toString() + "/connection/new-connection?controller-ip=" + WiFi.localIP().toString() + "&controller-device-name=" + activeDevice + "&controller-type=" + ControllerConfig::PIR_RGB);
+
+      Serial.println("Making GET request to - ");
+      Serial.println(endpoint);
+
+      http.begin(endpoint);
+      http.GET();
     }
   }
 }
+
 
 void setup()
 {
@@ -75,25 +90,23 @@ void setup()
   Serial.println(WiFi.dnsIP());
   Serial.println("");
 
-  // Let host know we exist by doing a GET request to a specific endpoint
-  // Send default data to remote controller to store on its own flash memory to offload that data so it can be used "offline" if necessary
-  // HTTPClient http;
-  // String endpoint = "http://" + WiFi.dnsIP().toString() + "/connection/new-connection?controller-ip=" + WiFi.localIP().toString() + "&controller-type=" + ControllerConfig::PIRRGB;
-
-  // Serial.println("Making GET request to - ");
-  // Serial.println(endpoint);
-
-  // http.begin(endpoint);
-  // int httpResponseCode = http.GET();
-
-  // Serial.println("Status of that request: " + httpResponseCode);
-
   // Setup for SPIFFS for accessing data storage on the ESP32 flash memory
   if (!SPIFFS.begin(true))
   {
     Serial.println("An Error has occurred while mounting SPIFFS");
     return;
   }
+
+  // Let host know we exist by doing a GET request to a specific endpoint
+  // Send default data to remote controller to store on its own flash memory to offload that data so it can be used "offline" if necessary
+  HTTPClient http;
+  String endpoint = String("http://" + WiFi.dnsIP().toString() + "/connection/new-connection?controller-ip=" + WiFi.localIP().toString() + "&controller-device-name=" + activeDevice + "&controller-type=" + ControllerConfig::PIR_RGB);
+
+  Serial.println("Making GET request to - ");
+  Serial.println(endpoint);
+
+  http.begin(endpoint);
+  http.GET();
 
   // Async - Does not need to be in loop
   api.handleServiceRouting(&server);

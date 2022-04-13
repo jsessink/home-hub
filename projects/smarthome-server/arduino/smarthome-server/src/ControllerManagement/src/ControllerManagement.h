@@ -9,7 +9,6 @@
 
 class ControllerManagement {
     public:
-        Response addController(AsyncWebServerRequest *request, StaticJsonDocument<512> doc, char* json);
         StaticJsonDocument<512> getControllerList();
 
     private:    

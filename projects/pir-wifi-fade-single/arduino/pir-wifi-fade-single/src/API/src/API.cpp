@@ -3,18 +3,34 @@
 using namespace std;
 
 #include <WiFi.h>
-
-#include <Preferences.h>
 #include <ESPAsyncWebServer.h>
 #include <ArduinoJson.h>
 #include "SPIFFS.h"
+#include <Preferences.h>
 
+#include <DeviceList.h>
 #include "API.h"
 #include "Settings/src/Settings.h"
 #include "Response.h"
 #include "LEDControl/src/LEDControl.h"
 
-void API::changeColor(ColorSettings colorSettings)
+ColorSettings API::getCurrentColorSettings()
+{
+  Preferences preferences;
+  preferences.begin("rgb-settings", false);
+
+  // Set color to lights w/ fade effect
+  ColorSettings currentColorSettings;
+    currentColorSettings.colorR = preferences.getUChar("color-r");
+    currentColorSettings.colorG = preferences.getUChar("color-g");
+    currentColorSettings.colorB = preferences.getUChar("color-b");
+
+  preferences.end();
+
+  return currentColorSettings;
+}
+
+void API::changeColor(ColorSettings updatedColorSettings)
 {
     Preferences preferences;
     Response response;
@@ -24,19 +40,17 @@ void API::changeColor(ColorSettings colorSettings)
     preferences.begin("rgb-settings", false);
 
     // Set color to lights w/ fade effect
-    ColorSettings currentColorSettings;
-        currentColorSettings.colorR = preferences.getUChar("color-r");
-        currentColorSettings.colorG = preferences.getUChar("color-g");
-        currentColorSettings.colorB = preferences.getUChar("color-b");
+    API api;
+    ColorSettings currentColorSettings = api.getCurrentColorSettings();
 
     // Send settings to the chip
     LEDControl ledControl;
-    ledControl.handleColorChange(currentColorSettings, colorSettings);
+    ledControl.handleColorChange(currentColorSettings, updatedColorSettings);
 
     // Update settings preferences   
-    preferences.putUChar("color-r", colorSettings.colorR);
-    preferences.putUChar("color-g", colorSettings.colorG);
-    preferences.putUChar("color-b", colorSettings.colorB);
+    preferences.putUChar("color-r", updatedColorSettings.colorR);
+    preferences.putUChar("color-g", updatedColorSettings.colorG);
+    preferences.putUChar("color-b", updatedColorSettings.colorB);
 
     preferences.end();
 
@@ -79,6 +93,38 @@ Settings API::initGetSettings()
 void API::handleServiceRouting(AsyncWebServer *server)
 {
     _server = server;
+
+    _server->on("/api/get-device-status", HTTP_GET, [](AsyncWebServerRequest *request) {
+      Serial.println("Request for device status");
+
+      AsyncResponseStream *response = request->beginResponseStream("application/json");
+      DynamicJsonDocument deviceSettings(200);
+      deviceSettings["controllerDeviceName"] = DeviceList::activeDevice;
+      serializeJson(deviceSettings, *response);
+
+      Serial.println("Sending device name: ");
+      Serial.println(DeviceList::activeDevice);
+
+      request->send(response);
+      return;
+    });
+
+    _server->on("/api/get-current-rgb", HTTP_GET, [](AsyncWebServerRequest *request) {
+      Serial.println("Current RGB value request received!");
+
+      API api;
+      ColorSettings colorSettings = api.getCurrentColorSettings();
+
+      AsyncResponseStream *response = request->beginResponseStream("application/json");
+      DynamicJsonDocument json(1024);
+      json["r"] = colorSettings.colorR;
+      json["g"] = colorSettings.colorG;
+      json["b"] = colorSettings.colorB;
+      serializeJson(json, *response);
+
+      request->send(response);
+      return;
+    });
 
     _server->on("/api/rgb-change", HTTP_GET, [](AsyncWebServerRequest *request) {
         Serial.println("Color change request received!");
@@ -145,6 +191,7 @@ void API::handleServiceRouting(AsyncWebServer *server)
             Serial.println("Received JSON!");
 
             request->send(200);
+            return;
         }
     );
 }
