@@ -9,11 +9,13 @@
 #include <DeviceList.h>
 
 #include "API/src/API.h"
+#include "PIRControl/src/PIRControl.h"
 #include "LEDControl/src/LEDControl.h"
 #include "Settings/src/Settings.h"
 
 using namespace DeviceList;
 
+PIRControl pirControl;
 LEDControl ledControl;
 API api;
 
@@ -64,6 +66,9 @@ void setup()
   // Init the settings in case defaults need to be set
   Settings bootedSettings = api.initGetSettings();
   ledControl.initBootedSettings(bootedSettings);
+
+  // Init PIR setup and listener on Core 0 (everything else defaults to 1);
+  pirControl.pirSetup();
 
   // Connect to Wi-Fi network with SSID and password
   Serial.print("Connecting Host Access Point");

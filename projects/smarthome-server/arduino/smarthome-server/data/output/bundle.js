@@ -820,7 +820,7 @@ var app = (function () {
     	return block;
     }
 
-    // (20:40)       {#each controllers as controller}
+    // (20:40)      {#each controllers as controller}
     function create_then_block(ctx) {
     	let each_1_anchor;
     	let current;
@@ -909,7 +909,7 @@ var app = (function () {
     		block,
     		id: create_then_block.name,
     		type: "then",
-    		source: "(20:40)       {#each controllers as controller}",
+    		source: "(20:40)      {#each controllers as controller}",
     		ctx
     	});
 
@@ -1053,7 +1053,7 @@ var app = (function () {
     			div = element("div");
     			info.block.c();
     			attr_dev(div, "class", "controller-list-container");
-    			add_location(div, file$1, 18, 0, 532);
+    			add_location(div, file$1, 18, 0, 530);
     		},
     		l: function claim(nodes) {
     			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");
@@ -1171,9 +1171,9 @@ var app = (function () {
     			t1 = space();
     			create_component(controllerlist.$$.fragment);
     			attr_dev(h1, "class", "svelte-2x1evt");
-    			add_location(h1, file, 4, 1, 106);
+    			add_location(h1, file, 4, 1, 103);
     			attr_dev(main, "class", "svelte-2x1evt");
-    			add_location(main, file, 3, 0, 97);
+    			add_location(main, file, 3, 0, 95);
     		},
     		l: function claim(nodes) {
     			throw new Error("options.hydrate only works if the component was compiled with the `hydratable: true` option");
