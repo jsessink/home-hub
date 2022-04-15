@@ -35,12 +35,13 @@ void WebApp::handleUIRouting()
 
 void WebApp::handleServiceRouting()
 {
-    _server->on("/api/proxy/get-current-rgb", HTTP_GET, [](AsyncWebServerRequest *request) {
+    _server->on("/api/proxy/get-current-rgb-settings", HTTP_GET, [](AsyncWebServerRequest *request) {
       Serial.println("Received proxy request to get current color");
 
-      String ip = String("http://" + request->getParam("ip")->value());
+      String ip = String(request->getParam("ip")->value());
 
       // Ping remote controller to ensure it is ready to GET
+      delay(100);
       bool isReady = WebApp::pingRemote(ip);
       if (!isReady)
       {
@@ -51,7 +52,7 @@ void WebApp::handleServiceRouting()
         return;
       }
 
-      String endpoint = String("http://" + ip + "/api/get-current-rgb");
+      String endpoint = String("http://" + ip + "/api/get-current-rgb-settings");
 
       HTTPClient http;
       http.begin(endpoint);
@@ -78,8 +79,6 @@ void WebApp::handleServiceRouting()
     _server->on("/api/proxy/rgb", HTTP_GET, [](AsyncWebServerRequest *request) {
         Serial.println("Received proxy request to change color");
 
-        // TODO: Set by controller type
-        // Pass the body to the controller
         String ip = request->getParam("ip")->value();
         String r = request->getParam("r")->value();
         String g = request->getParam("g")->value();
@@ -97,10 +96,10 @@ void WebApp::handleServiceRouting()
             return;
         }
 
-        String endpoint = ip + "/api/rgb-change?r=" + r + "&g=" + g + "&b=" + b;
+        String endpoint = String("http://" + ip + "/api/rgb-change?r=" + r + "&g=" + g + "&b=" + b);
 
         HTTPClient http;
-        http.begin("http://" + endpoint);
+        http.begin(endpoint);
 
         Serial.println("Attempting GET");
         // Send the original request's JSON to be deserialized on the remote controller
@@ -112,6 +111,43 @@ void WebApp::handleServiceRouting()
         http.end();
         
         request->send(statusCode);
+    });
+
+    _server->on("/api/proxy/rgb-setting-change", HTTP_GET, [](AsyncWebServerRequest *request)
+    {
+      Serial.println("Received proxy request to change rgb setting");
+
+      String ip = request->getParam("ip")->value();
+      String settingName = request->getParam("setting-name")->value();
+      String settingValue = request->getParam("setting-value")->value().c_str();
+
+      // Ping remote controller to ensure it is ready to GET
+      bool isReady = WebApp::pingRemote(ip);
+
+      if (!isReady)
+      {
+          Response response;
+          response.message = "Remote device not ready to receive input";
+          response.statusCode = 503;
+          request->send(response.statusCode, String(), response.message);
+          return;
+      }
+
+      String endpoint = String("http://" + ip + "/api/rgb-setting-change?setting-name=" + settingName + "&setting-value=" + settingValue);
+
+      HTTPClient http;
+      http.begin(endpoint);
+
+      Serial.println("Attempting GET");
+      // Send the original request's JSON to be deserialized on the remote controller
+      int statusCode = http.GET();
+      Serial.println("Status received: ");
+      Serial.println(statusCode);
+      
+      // Free up resources
+      http.end();
+      
+      request->send(statusCode);
     });
 
     _server->on("/api/get-controller-list", HTTP_GET, [](AsyncWebServerRequest *request) {

@@ -71,9 +71,6 @@ void pirListener(void *params)
         // Wait defined duration (from the time of trigger) then fade out and switch pirState to allow a next fade in
         if (millis() > pirControl.triggerTime + latestOnSettings.durationOn)
         {
-          Serial.println(latestOnSettings.durationOn);
-          Serial.println(pirControl.triggerTime + latestOnSettings.durationOn);
-
           ledControl.handleColorChange(latestOnSettings, offSettings);
 
           pirControl.pirState = LOW;
