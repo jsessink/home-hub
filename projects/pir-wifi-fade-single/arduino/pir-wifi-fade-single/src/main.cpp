@@ -6,18 +6,17 @@
 
 #include <ControllerConfig.h>
 #include <AccessPointConfig.h>
-#include <DeviceList.h>
+#include <DeviceSettings.h>
 
 #include "API/src/API.h"
 #include "PIRControl/src/PIRControl.h"
 #include "LEDControl/src/LEDControl.h"
 #include "Settings/src/Settings.h"
 
-using namespace DeviceList;
-
 PIRControl pirControl;
 LEDControl ledControl;
 API api;
+DeviceSettings deviceSettings;
 
 AsyncWebServer server(80);
 
@@ -42,7 +41,7 @@ void checkWiFiStatusAndConnect()
       // Let host know we exist again by doing a GET request to a specific endpoint
       // Send default data to remote controller to store on its own flash memory to offload that data so it can be used "offline" if necessary
       HTTPClient http;
-      String endpoint = String("http://" + WiFi.dnsIP().toString() + "/connection/new-connection?controller-ip=" + WiFi.localIP().toString() + "&controller-device-name=" + activeDevice + "&controller-type=" + ControllerConfig::PIR_RGB);
+      String endpoint = String("http://" + WiFi.dnsIP().toString() + "/connection/new-connection?controller-ip=" + WiFi.localIP().toString() + "&controller-device-name=" + deviceSettings.activeDevice + "&controller-type=" + ControllerConfig::PIR_RGB);
 
       Serial.println("Making GET request to - ");
       Serial.println(endpoint);
@@ -80,7 +79,6 @@ void setup()
   }
 
   // Init PIR setup and listener on Core 0 (everything else defaults to 1);
-  delay(2000);
   pirControl.pirSetup();
 
   // Connect to Wi-Fi network with SSID and password
@@ -116,7 +114,7 @@ void setup()
   // Let host know we exist by doing a GET request to a specific endpoint
   // Send default data to remote controller to store on its own flash memory to offload that data so it can be used "offline" if necessary
   HTTPClient http;
-  String endpoint = String("http://" + WiFi.dnsIP().toString() + "/connection/new-connection?controller-ip=" + WiFi.localIP().toString() + "&controller-device-name=" + activeDevice + "&controller-type=" + ControllerConfig::PIR_RGB);
+  String endpoint = String("http://" + WiFi.dnsIP().toString() + "/connection/new-connection?controller-ip=" + WiFi.localIP().toString() + "&controller-device-name=" + deviceSettings.activeDevice + "&controller-type=" + ControllerConfig::PIR_RGB);
 
   Serial.println("Making GET request to - ");
   Serial.println(endpoint);

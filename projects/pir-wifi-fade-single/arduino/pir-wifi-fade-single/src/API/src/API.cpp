@@ -8,44 +8,26 @@ using namespace std;
 #include "SPIFFS.h"
 #include <Preferences.h>
 
-#include <DeviceList.h>
 #include "API.h"
 #include "Settings/src/Settings.h"
 #include "Response.h"
 #include "LEDControl/src/LEDControl.h"
-
-Settings API::getCurrentColorSettings()
-{
-  Preferences preferences;
-  preferences.begin("rgb-settings", false);
-
-  // Set color to lights w/ fade effect
-  Settings currentColorSettings;
-    currentColorSettings.colorR = preferences.getUChar("color-r");
-    currentColorSettings.colorG = preferences.getUChar("color-g");
-    currentColorSettings.colorB = preferences.getUChar("color-b");
-
-  preferences.end();
-
-  return currentColorSettings;
-}
+#include "DeviceSettings.h"
 
 void API::changeColor(Settings updatedSettings)
 {
     Preferences preferences;
     Response response;
 
-    Serial.println("Attempting to update preferences.");
-
     preferences.begin("rgb-settings", false);
 
     // Set color to lights w/ fade effect
     API api;
-    Settings currentColorSettings = api.getCurrentColorSettings();
+    Settings currentSettings = api.initGetSettings();
 
     // Send settings to the chip
     LEDControl ledControl;
-    ledControl.handleColorChange(currentColorSettings, updatedSettings);
+    ledControl.handleColorChange(currentSettings, updatedSettings);
 
     // Update settings preferences   
     preferences.putUChar("color-r", updatedSettings.colorR);
@@ -54,8 +36,27 @@ void API::changeColor(Settings updatedSettings)
 
     preferences.end();
 
-    Serial.println("Preferences updated.");
+    return;
+}
 
+void API::changeSetting(String settingName, String settingValue, String type)
+{
+    Preferences preferences;
+    Response response;
+
+    preferences.begin("pir-settings", false);
+
+    // Update settings preferences
+    if (type == "bool")
+    {
+      preferences.putBool(settingName.c_str(), settingValue == "true");
+    }
+    else
+    {
+      preferences.putUShort(settingName.c_str(), settingValue.toInt());
+    }
+
+    preferences.end();
     return;
 }
 
@@ -80,10 +81,10 @@ Settings API::initGetSettings()
     preferences.begin("pir-settings", false);
 
     settings.alwaysOn = preferences.getBool("always-on", false);
-    settings.accidentalTripDelay = preferences.getUShort("accidental-trip-delay", 2000);
+    settings.accidentalTripDelay = preferences.getUShort("acc-delay", 2000);
     settings.durationOn = preferences.getUShort("duration-on", 10000);
-    settings.fadeInSpeed = preferences.getUShort("fade-in-speed", 2000);
-    settings.fadeOutSpeed = preferences.getUShort("fade-out-speed", 2500);
+    settings.fadeInSpeed = preferences.getUShort("in-speed", 2000);
+    settings.fadeOutSpeed = preferences.getUShort("out-speed", 2500);
 
     preferences.end();
 
@@ -95,31 +96,33 @@ void API::handleServiceRouting(AsyncWebServer *server)
     _server = server;
 
     _server->on("/api/get-device-status", HTTP_GET, [](AsyncWebServerRequest *request) {
-      Serial.println("Request for device status");
-
+      DeviceSettings deviceSettings;
       AsyncResponseStream *response = request->beginResponseStream("application/json");
-      DynamicJsonDocument deviceSettings(200);
-      deviceSettings["controllerDeviceName"] = DeviceList::activeDevice;
-      serializeJson(deviceSettings, *response);
-
-      Serial.println("Sending device name: ");
-      Serial.println(DeviceList::activeDevice);
+      DynamicJsonDocument jsonSettings(200);
+      jsonSettings["controllerDeviceName"] = deviceSettings.activeDevice;
+      serializeJson(jsonSettings, *response);
 
       request->send(response);
       return;
     });
 
-    _server->on("/api/get-current-rgb", HTTP_GET, [](AsyncWebServerRequest *request) {
-      Serial.println("Current RGB value request received!");
-
+    _server->on("/api/get-current-rgb-settings", HTTP_GET, [](AsyncWebServerRequest *request) {
       API api;
-      ColorSettings colorSettings = api.getCurrentColorSettings();
+      DeviceSettings deviceSettings;
+      Settings settings = api.initGetSettings();
 
       AsyncResponseStream *response = request->beginResponseStream("application/json");
       DynamicJsonDocument json(1024);
-      json["r"] = colorSettings.colorR;
-      json["g"] = colorSettings.colorG;
-      json["b"] = colorSettings.colorB;
+        json["deviceName"] = deviceSettings.getActiveDeviceName();
+        json["r"] = settings.colorR;
+        json["g"] = settings.colorG;
+        json["b"] = settings.colorB;
+        json["alwaysOn"] = settings.alwaysOn;
+        json["accidentalTripDelay"] = settings.accidentalTripDelay;
+        json["durationOn"] = settings.durationOn;
+        json["fadeInSpeed"] = settings.fadeInSpeed;
+        json["fadeOutSpeed"] = settings.fadeOutSpeed;
+
       serializeJson(json, *response);
 
       request->send(response);
@@ -127,8 +130,6 @@ void API::handleServiceRouting(AsyncWebServer *server)
     });
 
     _server->on("/api/rgb-change", HTTP_GET, [](AsyncWebServerRequest *request) {
-        Serial.println("Color change request received!");
-
         String r = request->getParam("r")->value();
         int r_num = atoi(r.c_str());
         String g = request->getParam("g")->value();
@@ -141,57 +142,40 @@ void API::handleServiceRouting(AsyncWebServer *server)
             updatedSettings.colorG = g_num;
             updatedSettings.colorB = b_num;
 
-        Serial.println("Attempting to change the color.");
-        Serial.println("Incoming red: ");
-        Serial.println(updatedSettings.colorR);
-        Serial.println("Incoming green: ");
-        Serial.println(updatedSettings.colorG);
-        Serial.println("Incoming blue: ");
-        Serial.println(updatedSettings.colorB);
-
         API::changeColor(updatedSettings);
 
-        Serial.println("Setting a response to send back: ");
         Response response;
         response.statusCode = 200;
         response.message = "Updated controller and flash preferences.";
-        Serial.print(response.message);
 
         request->send(response.statusCode, String(), response.message);
         return;
     });
 
-    _server->on("/api/update-settings", HTTP_POST,
-        [](AsyncWebServerRequest *request)
+    _server->on("/api/rgb-setting-change", HTTP_GET, [](AsyncWebServerRequest *request) {
+        String settingName = request->getParam("setting-name")->value();
+        String settingValue = request->getParam("setting-value")->value();
+
+        String updatedSettingType;
+
+        if (settingName == "always-on")
         {
-            // Handle basic requests without a body
-        },
-        [](AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data, size_t len, bool final)
-        {
-            // Handle file uploads
-        },
-        [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
-        {
-            // Handle requests with body -- https://github.com/me-no-dev/ESPAsyncWebServer/issues/195
-            Serial.println(String("data=") + (char*)data);
-            char* json = (char*)data;
-
-             // Deserialize the JSON document
-            StaticJsonDocument<200> doc;
-            DeserializationError error = deserializeJson(doc, json);
-
-            // Test if parsing succeeds.
-            if (error) {
-                Serial.print(F("deserializeJson() failed: "));
-                Serial.println(error.f_str());
-                return;
-            }
-
-            
-            Serial.println("Received JSON!");
-
-            request->send(200);
-            return;
+          bool boolVal;
+          istringstream(settingValue.c_str()) >> boolVal;
+          updatedSettingType = "bool";
         }
-    );
+        else
+        {
+          updatedSettingType = "UShort";
+        }
+
+        API::changeSetting(settingName, settingValue, updatedSettingType);
+
+        Response response;
+        response.statusCode = 200;
+        response.message = "Updated controller and flash preferences.";
+
+        request->send(response.statusCode, String(), response.message);
+        return;
+    });
 }

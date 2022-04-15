@@ -14,7 +14,7 @@ void AccessPointAPI::handleAPServiceRouting(AsyncWebServer *server)
 
     // Params accepted
     //  [0]controller-ip as IPAddress (as string)
-    //  [1]controller-device-name as DeviceList.Device
+    //  [1]controller-device-name as DeviceSettings.Device
     //  [2]controller-type as ControllerConfig.ControllerType
     //  
     _server->on("/connection/new-connection", HTTP_GET, [](AsyncWebServerRequest *request) {
