@@ -19,12 +19,12 @@ class API {
         unsigned long previousTime = 0;
         const long timeoutTime = 2000;
 
-        static void changeColor(ColorSettings updatedColorSettings);
+        static void changeColor(Settings updatedSettings);
 
     public:
         WiFiClient client;
         void handleServiceRouting(AsyncWebServer *server);
-        ColorSettings getCurrentColorSettings();
+        Settings getCurrentColorSettings();
         Settings initGetSettings();
 
 };

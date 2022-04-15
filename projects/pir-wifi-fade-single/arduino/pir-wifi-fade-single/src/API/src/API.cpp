@@ -14,13 +14,13 @@ using namespace std;
 #include "Response.h"
 #include "LEDControl/src/LEDControl.h"
 
-ColorSettings API::getCurrentColorSettings()
+Settings API::getCurrentColorSettings()
 {
   Preferences preferences;
   preferences.begin("rgb-settings", false);
 
   // Set color to lights w/ fade effect
-  ColorSettings currentColorSettings;
+  Settings currentColorSettings;
     currentColorSettings.colorR = preferences.getUChar("color-r");
     currentColorSettings.colorG = preferences.getUChar("color-g");
     currentColorSettings.colorB = preferences.getUChar("color-b");
@@ -30,7 +30,7 @@ ColorSettings API::getCurrentColorSettings()
   return currentColorSettings;
 }
 
-void API::changeColor(ColorSettings updatedColorSettings)
+void API::changeColor(Settings updatedSettings)
 {
     Preferences preferences;
     Response response;
@@ -41,16 +41,16 @@ void API::changeColor(ColorSettings updatedColorSettings)
 
     // Set color to lights w/ fade effect
     API api;
-    ColorSettings currentColorSettings = api.getCurrentColorSettings();
+    Settings currentColorSettings = api.getCurrentColorSettings();
 
     // Send settings to the chip
     LEDControl ledControl;
-    ledControl.handleColorChange(currentColorSettings, updatedColorSettings);
+    ledControl.handleColorChange(currentColorSettings, updatedSettings);
 
     // Update settings preferences   
-    preferences.putUChar("color-r", updatedColorSettings.colorR);
-    preferences.putUChar("color-g", updatedColorSettings.colorG);
-    preferences.putUChar("color-b", updatedColorSettings.colorB);
+    preferences.putUChar("color-r", updatedSettings.colorR);
+    preferences.putUChar("color-g", updatedSettings.colorG);
+    preferences.putUChar("color-b", updatedSettings.colorB);
 
     preferences.end();
 
@@ -82,8 +82,8 @@ Settings API::initGetSettings()
     settings.alwaysOn = preferences.getBool("always-on", false);
     settings.accidentalTripDelay = preferences.getUShort("accidental-trip-delay", 2000);
     settings.durationOn = preferences.getUShort("duration-on", 10000);
-    settings.fadeInSpeed = preferences.getUShort("fade-in-speed", 1000);
-    settings.fadeOutSpeed = preferences.getUShort("fade-out-speed", 1250);
+    settings.fadeInSpeed = preferences.getUShort("fade-in-speed", 2000);
+    settings.fadeOutSpeed = preferences.getUShort("fade-out-speed", 2500);
 
     preferences.end();
 
@@ -136,20 +136,20 @@ void API::handleServiceRouting(AsyncWebServer *server)
         String b = request->getParam("b")->value();
         int b_num = atoi(b.c_str());
 
-        ColorSettings colorSettings;
-            colorSettings.colorR = r_num;
-            colorSettings.colorG = g_num;
-            colorSettings.colorB = b_num;
+        Settings updatedSettings;
+            updatedSettings.colorR = r_num;
+            updatedSettings.colorG = g_num;
+            updatedSettings.colorB = b_num;
 
         Serial.println("Attempting to change the color.");
         Serial.println("Incoming red: ");
-        Serial.println(colorSettings.colorR);
+        Serial.println(updatedSettings.colorR);
         Serial.println("Incoming green: ");
-        Serial.println(colorSettings.colorG);
+        Serial.println(updatedSettings.colorG);
         Serial.println("Incoming blue: ");
-        Serial.println(colorSettings.colorB);
+        Serial.println(updatedSettings.colorB);
 
-        API::changeColor(colorSettings);
+        API::changeColor(updatedSettings);
 
         Serial.println("Setting a response to send back: ");
         Response response;

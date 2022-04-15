@@ -20,13 +20,7 @@ class LEDControl {
 
     public:
         void ledSetup();
-        void handleLEDRequest(
-            int r,
-            int g,
-            int b
-        );
-        void handleColorChange(ColorSettings currentSettings, ColorSettings newSettings);
-        void initBootedSettings(Settings settings);
+        void handleColorChange(Settings currentSettings, Settings newSettings);
 };
 
 #endif

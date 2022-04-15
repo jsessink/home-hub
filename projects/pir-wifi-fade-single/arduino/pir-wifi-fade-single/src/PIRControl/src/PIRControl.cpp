@@ -1,7 +1,9 @@
 #include <Arduino.h>
 #include <Preferences.h>
 
+#include "API/src/API.h"
 #include "PIRControl.h"
+#include "LEDControl/src/LEDControl.h"
 #include "Settings/src/Settings.h"
 
 TaskHandle_t pirListen;
@@ -10,33 +12,29 @@ void pirListener(void *params)
   PIRControl pirControl;
   pinMode(pirControl.pin, INPUT);
 
-  Settings settings;
-  Preferences preferences;
-  preferences.begin("pir-settings", true);
-  settings.alwaysOn = preferences.getBool("always-on");
-  settings.accidentalTripDelay = preferences.getUShort("accidental-trip-delay");
-  settings.durationOn = preferences.getUShort("duration-on");
-  preferences.end();
+  API api;
 
-  if (settings.alwaysOn)
-  {
-    Serial.println("Always on enabled, running the ON and moving along.");
-    // Do a fade in immediately, as it'll be controlled by a light switch
-
-    // Return to avoid the loop on this thread
-    return;
-  }
-
-  pirControl.pirState = LOW;
+  // Always assume we need to turn the lights off after init, since the main turns it on right away after setup
+  pirControl.pirState = HIGH;
   pirControl.tripDelayActive = false;
   pirControl.tripDelayTriggerTime = millis();
   pirControl.triggerTime = millis();
 
-  Serial.println("Starting loop on core 0");
+  LEDControl ledControl;
+
+  // Off settings we can keep here
+  Settings offSettings = api.initGetSettings();
+    offSettings.colorR = 0;
+    offSettings.colorG = 0;
+    offSettings.colorB = 0;
+
+  // On settings default to existing stored value since they turn on immediately after setup,
+  //  but then we need to pull in the loop in case they change between motions by the user.
+  Settings latestOnSettings = api.initGetSettings();
+
   for (;;)
   {
     pirControl.currentPIRVal = digitalRead(pirControl.pin);
-    Serial.println(pirControl.currentPIRVal);
 
     if (pirControl.currentPIRVal == HIGH)
     {
@@ -48,20 +46,20 @@ void pirListener(void *params)
       {
         // Check if the trip deplay detection is active, and if so see if criteria was met for the delay
         if (
-          pirControl.tripDelayActive &&
-          millis() > pirControl.tripDelayTriggerTime + settings.accidentalTripDelay
-        )
+            pirControl.tripDelayActive &&
+            millis() > pirControl.tripDelayTriggerTime + latestOnSettings.accidentalTripDelay)
         {
-          Serial.println("Motion detected!");
-          // Do something
+          latestOnSettings = api.initGetSettings();
+          ledControl.handleColorChange(offSettings, latestOnSettings);
+
           pirControl.pirState = HIGH;
           pirControl.tripDelayActive = false;
         }
-        else 
+        else if (!pirControl.tripDelayActive)
         {
           pirControl.tripDelayTriggerTime = millis();
           pirControl.tripDelayActive = true;
-        }  
+        }
       }
     }
     else
@@ -71,10 +69,13 @@ void pirListener(void *params)
       if (pirControl.pirState == HIGH)
       {
         // Wait defined duration (from the time of trigger) then fade out and switch pirState to allow a next fade in
-        if (millis() > pirControl.triggerTime + settings.durationOn)
+        if (millis() > pirControl.triggerTime + latestOnSettings.durationOn)
         {
-          Serial.println("No motion for duration");
-          // Do something
+          Serial.println(latestOnSettings.durationOn);
+          Serial.println(pirControl.triggerTime + latestOnSettings.durationOn);
+
+          ledControl.handleColorChange(latestOnSettings, offSettings);
+
           pirControl.pirState = LOW;
         }
       }
@@ -88,12 +89,11 @@ void pirListener(void *params)
 void PIRControl::pirSetup()
 {
   xTaskCreatePinnedToCore(
-    pirListener,
-    "pirListen",
-    10000,
-    NULL,
-    1,
-    &pirListen,
-    0
-  );
+      pirListener,
+      "pirListen",
+      10000,
+      NULL,
+      1,
+      &pirListen,
+      0);
 }

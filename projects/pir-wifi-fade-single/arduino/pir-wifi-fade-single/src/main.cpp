@@ -64,10 +64,23 @@ void setup()
   ledControl.ledSetup();
 
   // Init the settings in case defaults need to be set
+  Settings offSettings;
+    offSettings.colorR = 0;
+    offSettings.colorG = 0;
+    offSettings.colorB = 0;
+
   Settings bootedSettings = api.initGetSettings();
-  ledControl.initBootedSettings(bootedSettings);
+  ledControl.handleColorChange(offSettings, bootedSettings);
+
+  // Setup for SPIFFS for accessing data storage on the ESP32 flash memory
+  if (!SPIFFS.begin(true))
+  {
+    Serial.println("An Error has occurred while mounting SPIFFS");
+    return;
+  }
 
   // Init PIR setup and listener on Core 0 (everything else defaults to 1);
+  delay(2000);
   pirControl.pirSetup();
 
   // Connect to Wi-Fi network with SSID and password
@@ -95,12 +108,10 @@ void setup()
   Serial.println(WiFi.dnsIP());
   Serial.println("");
 
-  // Setup for SPIFFS for accessing data storage on the ESP32 flash memory
-  if (!SPIFFS.begin(true))
-  {
-    Serial.println("An Error has occurred while mounting SPIFFS");
-    return;
-  }
+  // Initialize OTA updater (needs to be before server boots)
+  //  -- Visit http://[ip]:[port]/update to update the firmware OTA
+  //  --- Upload the firmware as .bin by using PlatformIO output found in /.pio/build/nodemcu-32s/firmware.bin
+  AsyncElegantOTA.begin(&server);
 
   // Let host know we exist by doing a GET request to a specific endpoint
   // Send default data to remote controller to store on its own flash memory to offload that data so it can be used "offline" if necessary
@@ -113,13 +124,10 @@ void setup()
   http.begin(endpoint);
   http.GET();
 
+  Serial.println("All set! Setting up service routes and booting server for connections.");
+
   // Async - Does not need to be in loop
   api.handleServiceRouting(&server);
-
-  // Initialize OTA updater (needs to be before server boots)
-  //  -- Visit http://[ip]:[port]/update to update the firmware OTA
-  //  --- Upload the firmware as .bin by using PlatformIO output found in /.pio/build/nodemcu-32s/firmware.bin
-  AsyncElegantOTA.begin(&server);
 
   server.begin();
 
