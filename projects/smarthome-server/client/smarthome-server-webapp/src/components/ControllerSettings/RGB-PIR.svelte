@@ -69,7 +69,7 @@
   }
 </script>
 
-<div class="RGB-picker">
+<div class="rgb-picker">
   {#await settingsFetch}
     <p>... Getting online status and settings ...</p>
   {:then rgbSettings}
@@ -77,27 +77,27 @@
       <h2>{rgbSettings.deviceName}</h2>
 
       <label>
-        Color
+        <span>Color</span>
         <input data-setting="color" type="color" value={rgbSettings.hex} on:change={onSettingChange} />
       </label>
       <label>
-        Always On?
+        <span>Always On?</span>
         <input data-setting="always-on" type="checkbox" checked={rgbSettings.alwaysOn} on:change={onSettingChange} />
       </label>
       <label>
-        Accidental Trip Delay (ms): 
+        <span>Accidental Trip Delay (ms):</span>
         <input data-setting="acc-delay" type="number" value={rgbSettings.accidentalTripDelay} on:change={onSettingChange} />
       </label>
       <label>
-        Duration On (ms):
+        <span>Duration On (ms):</span>
         <input data-setting="duration-on" type="number" value={rgbSettings.durationOn} on:change={onSettingChange} />
       </label>
       <label>
-        Fade In Speed (ms):
+        <span>Fade In Speed (ms):</span>
         <input data-setting="in-speed" type="number" value={rgbSettings.fadeInSpeed} on:change={onSettingChange} />
       </label>
       <label>
-        Fade Out Speed (ms):
+        <span>Fade Out Speed (ms):</span>
         <input data-setting="out-speed" type="number" value={rgbSettings.fadeOutSpeed} on:change={onSettingChange} />
       </label>
     </div>
@@ -106,5 +106,48 @@
   {/await}
 </div>
 
-<style>
+<style lang="scss">
+  .rgb-picker > .card {
+    display: flex;
+    flex-direction: column;
+    text-align: left;
+
+    background-color: #2d3434;
+    border: 1px solid orange;
+    border-radius: 10px;
+    padding: 2rem;
+
+    h2 {
+      text-align: center;
+      margin-top: 0;
+    }
+
+    label {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+
+      padding: 0.5rem 0;
+
+      > span {
+        margin-right: 1rem;
+      }
+
+      > input {
+        padding: 5px;
+        
+        outline: none;
+        background: #e9f3f4;
+        border: 1px solid #b9d5d6;
+        border-radius: 4px;
+
+        &[type="color"] {
+          background: none;
+          outline: none;
+          padding: 0;
+          border: none;
+        }
+      }
+    }
+  }
 </style>
